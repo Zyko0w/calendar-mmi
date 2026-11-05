@@ -1,0 +1,30 @@
+{
+  "name": "agenda-mmi-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "API de synchronisation de l'Agenda MMI (MongoDB + import Hyperplanning)",
+  "type": "module",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch --env-file=.env src/server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.0.1",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongodb": "^7.0.0",
+    "node-ical": "^0.27.0",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "mongodb-memory-server": "^11.0.0"
+  }
+}

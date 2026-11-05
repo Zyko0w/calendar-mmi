@@ -1,0 +1,26 @@
+# Déploiement de l'API sur Render (Blueprint) : New > Blueprint > choisis ce dépôt.
+services:
+  - type: web
+    name: agenda-mmi-api
+    runtime: node
+    plan: free
+    region: frankfurt
+    rootDir: api
+    buildCommand: npm install --omit=dev
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: MONGODB_URI
+        sync: false # à coller depuis MongoDB Atlas
+      - key: MONGODB_DB
+        value: agenda_mmi
+      - key: JWT_SECRET
+        generateValue: true
+      - key: HP_REFRESH_MIN
+        value: "10" # import automatique d'Hyperplanning, en minutes
+      - key: HP_MIN_GAP_SEC
+        value: "60" # écart minimum entre deux imports pour un même étudiant
+      - key: CAL_TZ
+        value: Europe/Paris
+      - key: NODE_VERSION
+        value: "22"

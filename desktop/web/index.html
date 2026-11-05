@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agenda MMI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,200..800&family=Geist:wght@300..700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script src="config.js"></script>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="side" id="side" aria-label="Résumé du jour">
+    <div class="brand">
+      <div class="mark" aria-hidden="true">MMI</div>
+      <div class="brand-t"><b>Agenda</b><span>BUT MMI 3</span></div>
+      <button class="sync" id="sync" data-s="local" title="État de la synchronisation"><i></i><span>Cet appareil</span></button>
+      <button class="ibtn sm" id="settingsBtn" aria-label="Réglages"></button>
+    </div>
+
+    <div class="hero" aria-live="polite">
+      <div class="hero-n" id="heroN">05</div>
+      <div class="hero-m">
+        <span class="hero-wd" id="heroWd">jeudi</span>
+        <span class="hero-mo" id="heroMo">novembre 2026</span>
+        <span class="hero-wk" id="heroWk">Semaine 45, S5</span>
+      </div>
+    </div>
+
+    <button class="next" id="next" type="button"></button>
+
+    <section>
+      <div class="sec-h"><h2 id="miniTitle">Novembre</h2>
+        <div class="mini-nav"><button class="ibtn sm" id="miniPrev" aria-label="Mois précédent"></button><button class="ibtn sm" id="miniNext" aria-label="Mois suivant"></button></div>
+      </div>
+      <div class="mini-g" id="mini"></div>
+    </section>
+
+    <section>
+      <div class="sec-h"><h2>Rendus et évaluations</h2><small id="dlCount"></small></div>
+      <ul class="dl" id="dl"></ul>
+    </section>
+
+    <section>
+      <div class="sec-h"><h2>Calques</h2><small>Touche pour masquer</small></div>
+      <div class="layers" id="layers"></div>
+    </section>
+
+    <div class="foot">
+      <div class="row"><span>Son des alarmes</span><button class="switch" id="soundSw" role="switch" aria-checked="true" aria-label="Son des alarmes"></button></div>
+      <div class="row"><span>Thème</span>
+        <div class="mseg" id="themeSeg"><button data-t="auto">Auto</button><button data-t="light">Clair</button><button data-t="dark">Sombre</button></div>
+      </div>
+      <div class="row"><button class="linkbtn" id="testAlarm" type="button">Tester une alarme</button></div>
+      <div class="keys"><kbd>N</kbd> nouvel événement &nbsp; <kbd>T</kbd> aujourd'hui &nbsp; <kbd>←</kbd><kbd>→</kbd> naviguer<br><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> vues &nbsp; <kbd>/</kbd> ajout rapide</div>
+    </div>
+  </aside>
+  <div class="side-scrim" id="sideScrim"></div>
+
+  <main class="main">
+    <header class="bar">
+      <button class="menu-btn ibtn" id="menuBtn" aria-label="Ouvrir le résumé"></button>
+      <div class="nav">
+        <button class="ibtn" id="prev" aria-label="Période précédente"></button>
+        <button class="pill" id="todayBtn">Aujourd'hui</button>
+        <button class="ibtn" id="nextBtn" aria-label="Période suivante"></button>
+      </div>
+      <h1 class="ptitle" id="ptitle">Novembre <span>2026</span></h1>
+      <div class="spacer"></div>
+      <div class="quick">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+        <input id="quick" type="text" autocomplete="off" placeholder="Ajout rapide : TD UX demain 14h-16h salle 108" aria-label="Ajout rapide en langage naturel">
+        <div class="qp" id="qp" aria-live="polite"></div>
+      </div>
+      <div class="seg" role="tablist" id="seg">
+        <span class="seg-ind" id="segInd"></span>
+        <button role="tab" data-v="week" id="tabWeek">Semaine</button>
+        <button role="tab" data-v="month" id="tabMonth">Mois</button>
+        <button role="tab" data-v="agenda" id="tabAgenda">Agenda</button>
+      </div>
+      <button class="ibtn theme-btn" id="themeBtn" aria-label="Basculer clair ou sombre"></button>
+      <button class="btn-new" id="newBtn"><span id="newIc"></span><span class="lbl">Nouveau</span><kbd>N</kbd></button>
+    </header>
+    <div class="banner" id="banner" hidden>
+      <p>Voici un emploi du temps d'exemple. Connecte ton compte et ton Hyperplanning dans les réglages, ou efface les exemples pour partir de zéro.</p>
+      <button class="btn-ghost" id="clearDemo">Effacer les exemples</button>
+    </div>
+    <div class="view" id="view"></div>
+  </main>
+</div>
+
+<button class="fab" id="fab" aria-label="Nouvel événement"></button>
+
+<div class="scrim" id="modal" aria-hidden="true">
+  <form class="sheet" id="form" role="dialog" aria-modal="true" aria-labelledby="shTitle" novalidate>
+    <div class="sh-top"><h2 id="shTitle">Nouvel événement</h2><button type="button" class="ibtn" id="closeX" aria-label="Fermer"></button></div>
+    <input class="f-title" id="fTitle" placeholder="Intitulé, ex. SAÉ 5.01 projet client" maxlength="120" autocomplete="off" aria-label="Intitulé">
+    <div class="types" id="fTypes" role="radiogroup" aria-label="Type d'événement"></div>
+    <div class="grid3">
+      <label class="fld"><span id="lblDate">Date</span><input class="inp" type="date" id="fDate" required></label>
+      <label class="fld"><span id="lblStart">Début</span><input class="inp" type="time" id="fStart" step="300" required></label>
+      <label class="fld" id="wrapEnd"><span>Fin</span><input class="inp" type="time" id="fEnd" step="300"></label>
+    </div>
+    <label class="fld"><span>Salle ou lieu</span><input class="inp" id="fLoc" placeholder="Salle 112, Amphi A, Discord…" maxlength="80" autocomplete="off"></label>
+    <div class="fld"><span id="lblAlarm">Alarmes, plusieurs possibles</span><div class="achips" id="fAlarm" role="group" aria-labelledby="lblAlarm"></div></div>
+    <div class="grid2">
+      <div class="fld"><span>Répétition</span><label class="chkrow"><button type="button" class="switch" id="fRepeat" role="switch" aria-checked="false" aria-label="Chaque semaine"></button><span id="repLbl">Chaque semaine</span></label></div>
+      <label class="fld" id="wrapUntil"><span>Jusqu'au</span><input class="inp" type="date" id="fUntil"></label>
+    </div>
+    <p class="hint" id="repHint" hidden></p>
+    <div class="hpnote" id="hpNote" hidden><b>Cours importé d'Hyperplanning.</b> L'intitulé, l'horaire et la salle suivent ton emploi du temps officiel. Tu peux régler l'alarme et ajouter des notes.<pre id="hpInfo"></pre></div>
+    <div class="fld" id="wrapDone" hidden><label class="chkrow"><button type="button" class="switch" id="fDone" role="switch" aria-checked="false" aria-label="Rendu terminé"></button><span>Rendu terminé</span></label></div>
+    <label class="fld"><span>Notes</span><textarea class="inp" id="fNotes" placeholder="Consignes, lien Moodle, groupe…" maxlength="1000"></textarea></label>
+    <p class="err" id="fErr" role="alert"></p>
+    <div class="delc" id="delc"><p>Supprimer quoi ?</p><button type="button" class="btn-ghost" id="delOne">Cette séance</button><button type="button" class="btn-ghost" id="delAll">Toute la série</button></div>
+    <div class="sh-foot">
+      <button type="button" class="btn-del" id="delBtn"></button>
+      <div class="spacer" style="flex:1"></div>
+      <button type="button" class="btn-ghost" id="cancelBtn">Annuler</button>
+      <button type="submit" class="btn-save" id="saveBtn">Enregistrer</button>
+    </div>
+  </form>
+</div>
+
+<div class="alarm" id="alarm" role="alertdialog" aria-modal="true" aria-labelledby="alT" aria-hidden="true">
+  <div class="rings" aria-hidden="true"><i></i><i></i><i></i></div>
+  <div class="al-box">
+    <div class="al-bell" id="alBell"></div>
+    <div class="al-k" id="alK">Rappel</div>
+    <div class="al-time" id="alTime">08:30</div>
+    <div class="al-t" id="alT">Cours</div>
+    <div class="al-s" id="alS"></div>
+    <div class="al-act"><button class="al-snz" id="alSnz">Rappeler dans 5 min</button><button class="al-stop" id="alStop">Arrêter</button></div>
+  </div>
+</div>
+
+
+<div class="scrim" id="login" aria-hidden="true">
+  <form class="sheet auth" id="loginForm" role="dialog" aria-modal="true" aria-labelledby="authTitle" novalidate>
+    <div class="auth-mark" aria-hidden="true">MMI</div>
+    <h2 class="auth-t" id="authTitle">Connecte ton agenda</h2>
+    <p class="auth-p">Un seul compte pour retrouver tes cours, rendus et alarmes sur ton PC et ton téléphone.</p>
+    <div class="mseg auth-seg" id="authSeg"><button type="button" data-m="login" aria-pressed="true">Se connecter</button><button type="button" data-m="register" aria-pressed="false">Créer un compte</button></div>
+    <label class="fld"><span>E-mail</span><input class="inp" type="email" id="aEmail" autocomplete="email" placeholder="prenom.nom@etu.univ.fr" required></label>
+    <label class="fld"><span>Mot de passe</span><input class="inp" type="password" id="aPwd" autocomplete="current-password" minlength="8" placeholder="8 caractères minimum" required></label>
+    <details class="adv"><summary>Adresse du serveur</summary><label class="fld"><span>URL de l'API</span><input class="inp" id="aApi" autocomplete="off" placeholder="https://agenda-mmi-api.onrender.com"></label></details>
+    <p class="err" id="aErr" role="alert"></p>
+    <button type="submit" class="btn-save auth-go" id="aGo">Se connecter</button>
+    <button type="button" class="linkbtn auth-skip" id="aSkip">Continuer sans compte, sur cet appareil seulement</button>
+  </form>
+</div>
+
+<div class="scrim" id="settings" aria-hidden="true">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="setTitle">
+    <div class="sh-top"><h2 id="setTitle">Réglages</h2><button type="button" class="ibtn" id="setClose" aria-label="Fermer"></button></div>
+    <section class="set-sec">
+      <h3>Compte</h3>
+      <div id="setAccount"></div>
+    </section>
+    <section class="set-sec" id="setHpSec">
+      <h3>Emploi du temps Hyperplanning</h3>
+      <p class="set-help">Dans ton espace Hyperplanning, ouvre ton emploi du temps, clique sur l'icône d'export iCal puis copie le lien. Tes cours se mettent ensuite à jour tout seuls, environ toutes les 30 minutes.</p>
+      <label class="fld"><span>Lien iCal</span><input class="inp" id="hpUrl" autocomplete="off" placeholder="https://…/hp/Telechargements/ical/Edt_….ics?…"></label>
+      <div class="set-row"><button type="button" class="btn-save" id="hpSave">Enregistrer le lien</button><button type="button" class="btn-ghost" id="hpSync">Synchroniser maintenant</button><button type="button" class="btn-del" id="hpRemove">Retirer</button></div>
+      <p class="set-status" id="hpStatus"></p>
+    </section>
+    <section class="set-sec">
+      <h3>Serveur</h3>
+      <label class="fld"><span>URL de l'API</span><input class="inp" id="apiUrl" autocomplete="off"></label>
+      <div class="set-row"><button type="button" class="btn-ghost" id="apiSave">Enregistrer l'adresse</button></div>
+    </section>
+  </div>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
