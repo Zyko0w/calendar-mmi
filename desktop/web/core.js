@@ -380,6 +380,13 @@ export function createSync({ storage, defaultApiUrl = '', fetchImpl = (...a) => 
       await api.pull();
       return r;
     },
+    /** Applique les mêmes alarmes à tous les cours Hyperplanning (et aux prochains importés). */
+    async setHpAlarms(alarms) {
+      const r = await request('PUT', '/me/hyperplanning/alarms', { alarms });
+      st.user = r.user; write(KEYS.user, st.user);
+      await api.pull();
+      return r;
+    },
     async deleteAccount() { await request('DELETE', '/me'); await api.logout(); },
   };
   return api;

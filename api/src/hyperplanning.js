@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import dns from 'node:dns/promises';
 import net from 'node:net';
 import ical from 'node-ical';
+import { normAlarms } from './schemas.js';
 
 const TZ = () => process.env.CAL_TZ || 'Europe/Paris';
 const num = (v, d) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : d);
@@ -171,6 +172,7 @@ async function runSync(db, user, opts) {
     const existing = await events.find({ userId: user._id, source: 'hp' }, { projection: { id: 1, hpHash: 1, date: 1, deleted: 1 } }).toArray();
     const byId = new Map(existing.map((e) => [e.id, e]));
     const now = Date.now();
+    const alarms = normAlarms(user.hpAlarms);
     const ops = [];
     const seen = new Set();
     for (const ev of incoming) {
@@ -183,7 +185,7 @@ async function runSync(db, user, opts) {
           filter: { userId: user._id, id: ev.id },
           update: {
             $set: { ...ev, source: 'hp', serverUpdatedAt: now, updatedAt: now },
-            $setOnInsert: { notes: '', alarm: 10, alarms: [10], repeat: 'none', until: '', skip: [], done: false, deleted: false },
+            $setOnInsert: { notes: '', alarm: alarms.length ? alarms[alarms.length - 1] : null, alarms, repeat: 'none', until: '', skip: [], done: false, deleted: false },
           },
           upsert: true,
         },

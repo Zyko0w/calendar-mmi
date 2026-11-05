@@ -5,7 +5,7 @@ import rateLimit from 'express-rate-limit';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { ObjectId } from 'mongodb';
-import { eventSchema, hpPatchSchema, credentialsSchema, hpUrlSchema, issues } from './schemas.js';
+import { eventSchema, hpPatchSchema, credentialsSchema, hpUrlSchema, hpAlarmsSchema, normAlarms, issues } from './schemas.js';
 import { normalizeUrl, syncUser, refreshMs, minGapMs } from './hyperplanning.js';
 
 const sleep = (ms) => new Promise((r) => { setTimeout(r, ms).unref?.(); });
@@ -20,6 +20,7 @@ const publicUser = (u) => ({
   hpLastSync: u.hpLastSync || null,
   hpError: u.hpError || null,
   hpCount: u.hpCount || 0,
+  hpAlarms: normAlarms(u.hpAlarms),
 });
 
 export function createApp(db, { jwtSecret = process.env.JWT_SECRET, hpOptions = {} } = {}) {
@@ -108,6 +109,20 @@ export function createApp(db, { jwtSecret = process.env.JWT_SECRET, hpOptions = 
     if (!req.user.hpUrl) return res.status(400).json({ error: "Aucun lien Hyperplanning enregistré." });
     const result = await syncUser(db, req.user, hpOptions);
     res.status(result.ok ? 200 : 422).json(result.ok ? { result } : { error: result.error });
+  });
+
+  // Change d'un coup les alarmes de tous les cours Hyperplanning, et les garde pour les prochains imports.
+  app.put('/me/hyperplanning/alarms', auth, async (req, res) => {
+    const p = hpAlarmsSchema.safeParse(req.body);
+    if (!p.success) return res.status(400).json({ error: issues(p.error) });
+    const alarms = normAlarms(p.data.alarms);
+    const now = Date.now();
+    await users.updateOne({ _id: req.user._id }, { $set: { hpAlarms: alarms } });
+    const r = await events.updateMany(
+      { userId: req.user._id, source: 'hp', deleted: { $ne: true } },
+      { $set: { alarms, alarm: alarms.length ? alarms[alarms.length - 1] : null, updatedAt: now, serverUpdatedAt: now } },
+    );
+    res.json({ count: r.modifiedCount, user: publicUser({ ...req.user, hpAlarms: alarms }) });
   });
 
   /* ---------- Événements ---------- */

@@ -165,6 +165,12 @@
       <label class="fld"><span>Lien iCal</span><input class="inp" id="hpUrl" autocomplete="off" placeholder="https://…/hp/Telechargements/ical/Edt_….ics?…"></label>
       <div class="set-row"><button type="button" class="btn-save" id="hpSave">Enregistrer le lien</button><button type="button" class="btn-ghost" id="hpSync">Synchroniser maintenant</button><button type="button" class="btn-del" id="hpRemove">Retirer</button></div>
       <p class="set-status" id="hpStatus"></p>
+      <div class="hp-al" id="hpAlWrap">
+        <h4>Alarmes de tous les cours Hyperplanning</h4>
+        <p class="set-help">Choisis les rappels, puis applique-les à tous tes cours importés d'un coup. Les prochains cours importés les recevront aussi. Tu peux toujours changer un cours à part.</p>
+        <div class="achips" id="hpAlarms" role="group" aria-label="Alarmes des cours Hyperplanning"></div>
+        <div class="set-row" style="margin-top:10px"><button type="button" class="btn-save" id="hpAlApply">Appliquer à tous les cours</button><span class="set-status" id="hpAlStatus" style="margin:0"></span></div>
+      </div>
     </section>
     <section class="set-sec">
       <h3>Serveur</h3>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Linking, Pressable, TextInput, View } from 'react-native';
-import { TYPES, rel } from '../core';
+import { TYPES, ALARMS, MAX_ALARMS, toggleAlarm, rel } from '../core';
 import { tint, useTheme } from '../theme';
 import { useStore } from '../store';
 import { permissionState, askNotificationPermission, askExactAlarmPermission, testAlarm } from '../alarms';
@@ -29,10 +29,12 @@ export default function SettingsSheet({ visible, onClose, onLogin }) {
   const [api, setApi] = useState(sync.state.apiUrl);
   const [perm, setPerm] = useState({ notifications: true, exact: true });
   const [confirmDel, setConfirmDel] = useState(false);
+  const [hpAl, setHpAl] = useState(user?.hpAlarms ?? [10]);
+  const [alBusy, setAlBusy] = useState(false);
 
   useEffect(() => {
     if (!visible) return;
-    setHpUrl(sync.state.user?.hpUrl || ''); setApi(sync.state.apiUrl); setHpMsg(null); setConfirmDel(false);
+    setHpUrl(sync.state.user?.hpUrl || ''); setApi(sync.state.apiUrl); setHpMsg(null); setConfirmDel(false); setHpAl(sync.state.user?.hpAlarms ?? [10]);
     permissionState().then(setPerm).catch(() => {});
   }, [visible, events]);
 
@@ -82,6 +84,29 @@ export default function SettingsSheet({ visible, onClose, onLogin }) {
           {user?.hpUrl ? <Button kind="danger" title="Retirer" disabled={busy} onPress={() => hp(() => sync.setHyperplanning(null), 'Lien retiré, les cours importés sont masqués.')} /> : null}
         </View>
         <T size={13} color={hpMsg?.bad || (!hpMsg && user?.hpError) ? t.danger : t.muted}>{hpMsg ? hpMsg.text : hpStatus}</T>
+        {user?.hpUrl ? (
+          <View style={{ gap: 10, marginTop: 8, paddingTop: 14, borderTopWidth: 1, borderColor: t.line, borderStyle: 'dashed' }}>
+            <T weight="bodySemi" size={14}>Alarmes de tous les cours Hyperplanning</T>
+            <T muted size={13} style={{ lineHeight: 19 }}>Choisis les rappels, puis applique-les à tous tes cours importés d'un coup. Les prochains cours importés les recevront aussi.</T>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+              {ALARMS.map(([v, l]) => {
+                const on = v == null ? hpAl.length === 0 : hpAl.includes(v);
+                return (
+                  <Chip key={String(v)} label={l} selected={on} onPress={() => {
+                    if (v == null) { setHpAl([]); return; }
+                    const next = toggleAlarm(hpAl, v);
+                    if (next.length === hpAl.length && !next.includes(v)) toast(`Pas plus de ${MAX_ALARMS} alarmes.`);
+                    setHpAl(next);
+                  }} />
+                );
+              })}
+            </View>
+            <Button title={alBusy ? 'Application…' : 'Appliquer à tous les cours'} disabled={alBusy} style={{ alignSelf: 'flex-start' }} onPress={async () => {
+              setAlBusy(true);
+              try { const r = await sync.setHpAlarms(hpAl); toast(`Alarmes mises à jour sur ${r.count} cours Hyperplanning`); } catch (e) { toast(e.message); } finally { setAlBusy(false); }
+            }} />
+          </View>
+        ) : null}
       </Section>
 
       <Section title="Alarmes">

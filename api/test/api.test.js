@@ -110,6 +110,36 @@ test('parcours complet', async () => {
   assert.equal(r.status, 401);
 });
 
+test('alarmes de tous les cours Hyperplanning', async () => {
+  icsBody = ICS;
+  const url = 'https://hp.iut.fr/hp/Telechargements/ical/Edt.ics?idICal=Y';
+  let r = await call('POST', '/auth/register', { email: 'c@iut.fr', password: 'motdepasse1' });
+  const token = r.body.token;
+  assert.deepEqual(r.body.user.hpAlarms, [10]);
+  await call('PUT', '/me/hyperplanning', { url }, token);
+  r = await call('GET', '/events', null, token);
+  assert.ok(r.body.events.every((e) => e.alarms.length === 1 && e.alarms[0] === 10));
+
+  r = await call('PUT', '/me/hyperplanning/alarms', { alarms: [60, 1440] }, token);
+  assert.equal(r.status, 200);
+  assert.equal(r.body.count, 2);
+  assert.deepEqual(r.body.user.hpAlarms, [1440, 60]);
+  r = await call('GET', '/events', null, token);
+  for (const e of r.body.events) { assert.deepEqual(e.alarms, [1440, 60]); assert.equal(e.alarm, 60); }
+  r = await call('PUT', '/me/hyperplanning/alarms', { alarms: [99999] }, token);
+  assert.equal(r.status, 400);
+
+  // Réglé avant l'import : les nouveaux cours reçoivent directement ces alarmes, même « aucune ».
+  r = await call('POST', '/auth/register', { email: 'd@iut.fr', password: 'motdepasse1' });
+  const t2 = r.body.token;
+  r = await call('PUT', '/me/hyperplanning/alarms', { alarms: [] }, t2);
+  assert.equal(r.body.count, 0);
+  await call('PUT', '/me/hyperplanning', { url }, t2);
+  r = await call('GET', '/events', null, t2);
+  assert.equal(r.body.events.length, 2);
+  assert.ok(r.body.events.every((e) => e.alarms.length === 0 && e.alarm === null));
+});
+
 test('refuse les liens non https', async () => {
   const r0 = await call('POST', '/auth/register', { email: 'b@iut.fr', password: 'motdepasse1' });
   const r = await call('PUT', '/me/hyperplanning', { url: 'http://localhost/x.ics' }, r0.body.token);

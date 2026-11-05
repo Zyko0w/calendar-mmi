@@ -19,7 +19,7 @@ Chaque appareil garde une copie locale. Hors ligne, tu continues à ajouter et m
 
 ---
 
-## 1. Base de données : MongoDB Atlas (gratuit)
+## 1. Base de données : MongoDB Atlas (gratuit) 
 
 1. Crée un compte sur [mongodb.com/atlas](https://www.mongodb.com/atlas), puis un cluster **M0 (Free)** en région Europe.
 2. **Database Access** : crée un utilisateur avec un mot de passe.

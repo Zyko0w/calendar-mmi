@@ -41,6 +41,14 @@ export const hpUrlSchema = z.object({
   url: z.union([z.string().trim().max(2000), z.null()]),
 });
 
+/** Alarmes appliquées à tous les cours importés d'Hyperplanning (et aux prochains imports). */
+export const hpAlarmsSchema = z.object({
+  alarms: z.array(z.number().int().min(0).max(10080)).max(4),
+});
+
+/** Alarmes par défaut d'un étudiant pour ses cours Hyperplanning, triées du plus tôt au plus tard. */
+export const normAlarms = (a) => [...new Set(Array.isArray(a) ? a : [10])].sort((x, y) => y - x).slice(0, 4);
+
 export function issues(err) {
   return err.issues?.map((i) => `${i.path.join('.') || 'corps'} : ${i.message}`).join(' ; ') || 'Requête invalide.';
 }

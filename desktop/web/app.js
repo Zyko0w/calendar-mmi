@@ -611,7 +611,34 @@ function renderSettings() {
   st.classList.toggle('bad', !!u?.hpError);
   st.textContent = !u ? 'Connecte-toi pour importer ton emploi du temps.' : u.hpError ? `Dernière tentative ${fmtAgo(u.hpLastSync)} : ${u.hpError}` : u.hpUrl ? `${u.hpCount || 0} cours importés, mis à jour ${fmtAgo(u.hpLastSync)}.` : 'Aucun lien enregistré.';
   $('#apiUrl').value = sync.state.apiUrl || '';
+  $('#hpAlWrap').hidden = !u?.hpUrl;
+  hpAl = [...(u?.hpAlarms ?? [10])]; $('#hpAlStatus').textContent = ''; renderHpAlarms();
 }
+/* Alarmes de tous les cours Hyperplanning */
+let hpAl = [];
+function renderHpAlarms() {
+  $('#hpAlarms').innerHTML = ALARMS.map(([v, l]) => {
+    const on = v == null ? hpAl.length === 0 : hpAl.includes(v);
+    return `<button type="button" class="achip" data-a="${v == null ? '' : v}" aria-pressed="${on}">${ic('check', 13, 3)}${l}</button>`;
+  }).join('');
+}
+$('#hpAlarms').addEventListener('click', (e) => {
+  const b = e.target.closest('.achip'); if (!b) return;
+  if (b.dataset.a === '') hpAl = [];
+  else {
+    const before = hpAl.length; hpAl = toggleAlarm(hpAl, Number(b.dataset.a));
+    if (hpAl.length === before && !hpAl.includes(Number(b.dataset.a))) toast(`Pas plus de ${MAX_ALARMS} alarmes.`);
+  }
+  renderHpAlarms();
+});
+$('#hpAlApply').onclick = async () => {
+  const st = $('#hpAlStatus'), btn = $('#hpAlApply'); st.classList.remove('bad'); st.textContent = 'Application…'; btn.disabled = true;
+  try {
+    const r = await sync.setHpAlarms(hpAl);
+    st.textContent = '';
+    toast(`Alarmes mises à jour sur ${r.count} cours Hyperplanning`);
+  } catch (err) { st.classList.add('bad'); st.textContent = err.message; } finally { btn.disabled = false; }
+};
 function openSettings() { closeDrawer(); renderSettings(); const s = $('#settings'); s.classList.add('on'); s.setAttribute('aria-hidden', 'false'); }
 function closeSettings() { const s = $('#settings'); s.classList.remove('on'); s.setAttribute('aria-hidden', 'true'); }
 $('#settingsBtn').onclick = openSettings; $('#setClose').onclick = closeSettings;
