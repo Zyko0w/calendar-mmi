@@ -1,7 +1,7 @@
 [package]
 name = "agenda-mmi"
 version = "1.0.0"
-description = "Agenda MMI"
+description = "Agend-A"
 edition = "2021"
 
 [lib]

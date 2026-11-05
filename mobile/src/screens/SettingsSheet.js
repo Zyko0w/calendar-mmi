@@ -18,7 +18,7 @@ function Section({ title, children }) {
   );
 }
 
-export default function SettingsSheet({ visible, onClose, onLogin }) {
+export default function SettingsSheet({ visible, onClose, onLogin, onTwoFactor }) {
   const t = useTheme();
   const { sync, prefs, setPref, hidden, events } = useStore();
   const toast = useToast();
@@ -69,6 +69,26 @@ export default function SettingsSheet({ visible, onClose, onLogin }) {
           </>
         )}
       </View>
+
+      {user ? (
+        <Section title="Sécurité">
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: user.twoFactor ? t.cat.stage : t.cat.eval }} />
+            <T size={14} weight="bodyMedium">{user.twoFactor ? 'Double authentification activée' : 'Double authentification désactivée'}</T>
+          </View>
+          <T muted size={13} style={{ lineHeight: 19 }}>
+            {user.twoFactor
+              ? `La connexion demande un code de ton appli d'authentification. ${user.recoveryLeft} code${user.recoveryLeft > 1 ? 's' : ''} de secours restant${user.recoveryLeft > 1 ? 's' : ''}.`
+              : "Ajoute un code à 6 chiffres donné par une appli d'authentification, en plus du mot de passe."}
+          </T>
+          <Button
+            kind={user.twoFactor ? 'ghost' : 'primary'}
+            title={user.twoFactor ? 'Désactiver' : 'Activer la double authentification'}
+            style={{ alignSelf: 'flex-start' }}
+            onPress={() => { onClose(); onTwoFactor(user.twoFactor ? 'disable' : 'enable'); }}
+          />
+        </Section>
+      ) : null}
 
       <Section title="Emploi du temps Hyperplanning">
         <T muted size={13} style={{ lineHeight: 19 }}>Dans ton espace Hyperplanning, ouvre ton emploi du temps, touche l'icône d'export iCal puis copie le lien. Tes cours se mettent ensuite à jour tout seuls, environ toutes les 30 minutes.</T>

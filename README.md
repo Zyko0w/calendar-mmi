@@ -1,4 +1,4 @@
-# Agenda MMI
+# Agend-A
 
 Agenda avec alarmes pour étudiant·e de BUT MMI 3. Il tourne sur trois supports qui partagent les mêmes données :
 
@@ -76,7 +76,7 @@ Dans l'espace étudiant Hyperplanning, ouvre ton emploi du temps, clique sur l'i
    npm run dev      # test en fenêtre
    npm run build    # installeurs .exe et .msi
    ```
-3. L'installeur est généré dans `desktop/src-tauri/target/release/bundle/nsis/Agenda MMI_1.0.0_x64-setup.exe`.
+3. L'installeur est généré dans `desktop/src-tauri/target/release/bundle/nsis/Agend-A_1.0.0_x64-setup.exe`.
 
 Fermer la fenêtre la **réduit dans la zone de notification** : les alarmes continuent de sonner, avec une notification Windows et la fenêtre qui revient au premier plan. Clic droit sur l'icône pour activer « Lancer au démarrage de Windows » ou quitter vraiment.
 

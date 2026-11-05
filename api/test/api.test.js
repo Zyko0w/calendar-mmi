@@ -4,6 +4,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import { connect, close } from '../src/db.js';
 import { createApp } from '../src/app.js';
 import { toEvents } from '../src/hyperplanning.js';
+import { hotp, stepAt, verifyTotp, base32Decode, base32Encode } from '../src/totp.js';
 
 const ICS = `BEGIN:VCALENDAR
 VERSION:2.0
@@ -38,7 +39,7 @@ before(async () => {
   if (!process.env.MONGO_TEST_URI) mongo = await MongoMemoryServer.create();
   const db = await connect(process.env.MONGO_TEST_URI || mongo.getUri(), 'test_' + Date.now());
   const fakeFetch = async () => new Response(icsBody, { status: 200 });
-  const app = createApp(db, { jwtSecret: 'x'.repeat(32), hpOptions: { fetchImpl: fakeFetch, skipHostCheck: true } });
+  const app = createApp(db, { jwtSecret: 'x'.repeat(32), authLimit: 1000, hpOptions: { fetchImpl: fakeFetch, skipHostCheck: true } });
   server = app.listen(0);
   base = `http://127.0.0.1:${server.address().port}`;
 });
@@ -144,4 +145,94 @@ test('refuse les liens non https', async () => {
   const r0 = await call('POST', '/auth/register', { email: 'b@iut.fr', password: 'motdepasse1' });
   const r = await call('PUT', '/me/hyperplanning', { url: 'http://localhost/x.ics' }, r0.body.token);
   assert.equal(r.status, 400);
+});
+
+test('TOTP : vecteur de la RFC 6238', () => {
+  // Secret ASCII « 12345678901234567890 », instant 59 s → 94287082 (8 chiffres), donc 287082 sur 6.
+  const secret = base32Encode(Buffer.from('12345678901234567890'));
+  assert.equal(hotp(secret, stepAt(59e3)), '287082');
+  assert.equal(base32Decode(secret).toString(), '12345678901234567890');
+  assert.equal(verifyTotp(secret, '287082', { now: 59e3 }), 1);
+  assert.equal(verifyTotp(secret, '287082', { now: 59e3, afterStep: 1 }), null);
+});
+
+test('double authentification', async () => {
+  const creds = { email: 'deux@iut.fr', password: 'motdepasse1' };
+  let r = await call('POST', '/auth/register', creds);
+  const t1 = r.body.token;
+  assert.equal(r.body.user.twoFactor, false);
+  // Deuxième appareil déjà connecté : il sera déconnecté à l'activation.
+  const other = (await call('POST', '/auth/login', creds)).body.token;
+
+  r = await call('POST', '/me/2fa/setup', null, t1);
+  assert.equal(r.status, 200);
+  assert.match(r.body.otpauthUrl, /^otpauth:\/\/totp\/Agend-A:deux%40iut\.fr\?secret=[A-Z2-7]+&issuer=Agend-A/);
+  assert.match(r.body.qrSvg, /^<svg/);
+  const secret = r.body.secret.replace(/\s/g, '');
+  const code = (dStep = 0) => hotp(secret, stepAt() + dStep);
+
+  r = await call('POST', '/me/2fa/enable', { code: '000000' === code() ? '111111' : '000000' }, t1);
+  assert.equal(r.status, 400);
+  r = await call('POST', '/me/2fa/enable', { code: code(-1) }, t1);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.user.twoFactor, true);
+  assert.equal(r.body.recoveryCodes.length, 8);
+  const t2 = r.body.token, recovery = r.body.recoveryCodes;
+  assert.equal((await call('GET', '/me', null, t1)).status, 401, 'ancienne session fermée');
+  assert.equal((await call('GET', '/me', null, other)).status, 401, 'autre appareil déconnecté');
+  assert.equal((await call('GET', '/me', null, t2)).status, 200);
+  assert.equal((await call('POST', '/me/2fa/setup', null, t2)).status, 409);
+
+  // Connexion : mot de passe seul refusé avec twoFactor, mauvais mot de passe sans le révéler.
+  r = await call('POST', '/auth/login', creds);
+  assert.equal(r.status, 401);
+  assert.equal(r.body.twoFactor, true);
+  r = await call('POST', '/auth/login', { ...creds, password: 'mauvais00', code: code() });
+  assert.equal(r.status, 401);
+  assert.equal(r.body.twoFactor, undefined);
+  r = await call('POST', '/auth/login', { ...creds, code: code() });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  // Le même code ne sert qu'une fois.
+  r = await call('POST', '/auth/login', { ...creds, code: code() });
+  assert.equal(r.status, 401);
+
+  // Code de secours : accepté une seule fois, minuscules et sans tiret tolérés.
+  r = await call('POST', '/auth/login', { ...creds, code: recovery[0].toLowerCase().replace('-', '') });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.user.recoveryLeft, 7);
+  r = await call('POST', '/auth/login', { ...creds, code: recovery[0] });
+  assert.equal(r.status, 401);
+  const t3 = (await call('POST', '/auth/login', { ...creds, code: recovery[1] })).body.token;
+
+  // Désactivation : mot de passe faux refusé, puis mot de passe et code de secours.
+  r = await call('POST', '/me/2fa/disable', { password: 'mauvais00', code: recovery[2] }, t3);
+  assert.equal(r.status, 403);
+  r = await call('POST', '/me/2fa/disable', { password: creds.password, code: recovery[2] }, t3);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.user.twoFactor, false);
+  r = await call('POST', '/auth/login', creds);
+  assert.equal(r.status, 200);
+});
+
+test('blocage après 5 codes faux', async () => {
+  const creds = { email: 'bloc@iut.fr', password: 'motdepasse1' };
+  const t = (await call('POST', '/auth/register', creds)).body.token;
+  const secret = (await call('POST', '/me/2fa/setup', null, t)).body.secret.replace(/\s/g, '');
+  await call('POST', '/me/2fa/enable', { code: hotp(secret, stepAt()) }, t);
+  const bad = String((Number(hotp(secret, stepAt() + 1)) + 1) % 1e6).padStart(6, '0');
+  for (let i = 0; i < 5; i++) await call('POST', '/auth/login', { ...creds, code: bad === hotp(secret, stepAt() + 1) ? '123456' : bad });
+  const r = await call('POST', '/auth/login', { ...creds, code: hotp(secret, stepAt() + 1) });
+  assert.equal(r.status, 401);
+  assert.match(r.body.error, /Trop de codes faux/);
+});
+
+test('limite de tentatives par adresse IP', async () => {
+  const db = (await import('../src/db.js'));
+  const app = createApp(await db.connect(), { jwtSecret: 'y'.repeat(32), authLimit: 3 });
+  const s = app.listen(0);
+  const url = `http://127.0.0.1:${s.address().port}/auth/login`;
+  const codes = [];
+  for (let i = 0; i < 4; i++) codes.push((await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"email":"x@iut.fr","password":"mauvais00"}' })).status);
+  s.close();
+  assert.deepEqual(codes, [401, 401, 401, 429]);
 });

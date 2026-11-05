@@ -37,6 +37,16 @@ export const credentialsSchema = z.object({
   password: z.string().min(8, 'Le mot de passe doit faire au moins 8 caractères.').max(200),
 });
 
+export const twoFactorCodeSchema = z.object({
+  code: z.string().trim().regex(/^\d{3}\s?\d{3}$/).transform((c) => c.replace(/\s/g, '')),
+});
+
+/** Désactivation : mot de passe, et code d'appli ou code de secours. */
+export const twoFactorDisableSchema = z.object({
+  password: z.string().min(1).max(200),
+  code: z.string().trim().min(6).max(20),
+});
+
 export const hpUrlSchema = z.object({
   url: z.union([z.string().trim().max(2000), z.null()]),
 });

@@ -5,7 +5,9 @@ import rateLimit from 'express-rate-limit';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { ObjectId } from 'mongodb';
-import { eventSchema, hpPatchSchema, credentialsSchema, hpUrlSchema, hpAlarmsSchema, normAlarms, issues } from './schemas.js';
+import QRCode from 'qrcode';
+import { eventSchema, hpPatchSchema, credentialsSchema, hpUrlSchema, hpAlarmsSchema, twoFactorCodeSchema, twoFactorDisableSchema, normAlarms, issues } from './schemas.js';
+import { newSecret, verifyTotp, otpauthUrl, seal, unseal, newRecoveryCodes, hashRecovery, looksLikeRecovery } from './totp.js';
 import { normalizeUrl, syncUser, refreshMs, minGapMs } from './hyperplanning.js';
 
 const sleep = (ms) => new Promise((r) => { setTimeout(r, ms).unref?.(); });
@@ -21,9 +23,15 @@ const publicUser = (u) => ({
   hpError: u.hpError || null,
   hpCount: u.hpCount || 0,
   hpAlarms: normAlarms(u.hpAlarms),
+  twoFactor: !!u.totpEnabled,
+  recoveryLeft: u.totpEnabled ? (u.recoveryHashes || []).length : 0,
 });
 
-export function createApp(db, { jwtSecret = process.env.JWT_SECRET, hpOptions = {} } = {}) {
+// Après 5 codes faux d'affilée, la double authentification du compte est bloquée 15 minutes.
+const MAX_CODE_FAILS = 5;
+const CODE_LOCK_MS = 15 * 60e3;
+
+export function createApp(db, { jwtSecret = process.env.JWT_SECRET, totpKey = process.env.TOTP_KEY || jwtSecret, authLimit = 30, hpOptions = {} } = {}) {
   if (!jwtSecret || jwtSecret.length < 16) throw new Error('JWT_SECRET manquant ou trop court (16 caractères minimum).');
   const users = db.collection('users');
   const events = db.collection('events');
@@ -34,22 +42,55 @@ export function createApp(db, { jwtSecret = process.env.JWT_SECRET, hpOptions = 
   app.use(cors({ origin: true, allowedHeaders: ['Content-Type', 'Authorization'], methods: ['GET', 'POST', 'PUT', 'DELETE'] }));
   app.use(express.json({ limit: '200kb' }));
 
-  const sign = (u) => jwt.sign({ sub: String(u._id) }, jwtSecret, { expiresIn: '120d' });
-  const authLimiter = rateLimit({ windowMs: 15 * 60e3, limit: 30, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: 'Trop de tentatives, réessaie dans quelques minutes.' } });
+  // sv (version de session) : activer ou couper la double authentification déconnecte les autres appareils.
+  const sign = (u) => jwt.sign({ sub: String(u._id), sv: u.sv || 0 }, jwtSecret, { expiresIn: '120d' });
+  const authLimiter = rateLimit({ windowMs: 15 * 60e3, limit: authLimit, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: 'Trop de tentatives, réessaie dans quelques minutes.' } });
 
   const auth = async (req, res, next) => {
     const h = req.get('authorization') || '';
     const token = h.startsWith('Bearer ') ? h.slice(7) : null;
     if (!token) return res.status(401).json({ error: 'Connexion requise.' });
     try {
-      const { sub } = jwt.verify(token, jwtSecret);
+      const { sub, sv = 0 } = jwt.verify(token, jwtSecret);
       const user = await users.findOne({ _id: new ObjectId(sub) });
       if (!user) return res.status(401).json({ error: 'Compte introuvable.' });
+      if ((user.sv || 0) !== sv) return res.status(401).json({ error: 'Session fermée, reconnecte-toi.' });
       req.user = user;
       next();
     } catch {
       res.status(401).json({ error: 'Session expirée, reconnecte-toi.' });
     }
+  };
+
+  /**
+   * Vérifie un code de double authentification (appli ou code de secours) et le consomme.
+   * Renvoie null si c'est bon, sinon le message d'erreur à afficher.
+   */
+  const checkSecondFactor = async (u, code) => {
+    if (u.totpLockedUntil > Date.now()) return 'Trop de codes faux. Réessaie dans quelques minutes.';
+    let ok = false;
+    if (looksLikeRecovery(code)) {
+      const h = hashRecovery(code);
+      const r = await users.updateOne({ _id: u._id, recoveryHashes: h }, { $pull: { recoveryHashes: h } });
+      ok = r.modifiedCount === 1;
+    } else {
+      const step = verifyTotp(unseal(u.totpSecret, totpKey), code, { afterStep: u.totpLastStep ?? -1 });
+      // Condition sur le dernier pas : deux requêtes simultanées avec le même code ne passent pas toutes les deux.
+      if (step !== null) {
+        const r = await users.updateOne(
+          { _id: u._id, $or: [{ totpLastStep: { $exists: false } }, { totpLastStep: { $lt: step } }] },
+          { $set: { totpLastStep: step } },
+        );
+        ok = r.modifiedCount === 1;
+      }
+    }
+    if (ok) {
+      if (u.totpFails) await users.updateOne({ _id: u._id }, { $set: { totpFails: 0 } });
+      return null;
+    }
+    const fails = (u.totpFails || 0) + 1;
+    await users.updateOne({ _id: u._id }, { $set: fails >= MAX_CODE_FAILS ? { totpFails: 0, totpLockedUntil: Date.now() + CODE_LOCK_MS } : { totpFails: fails } });
+    return 'Code incorrect ou déjà utilisé.';
   };
 
   app.get('/health', (_req, res) => res.json({ ok: true, time: Date.now() }));
@@ -75,10 +116,62 @@ export function createApp(db, { jwtSecret = process.env.JWT_SECRET, hpOptions = 
     if (!p.success) return res.status(400).json({ error: 'E-mail ou mot de passe incorrect.' });
     const u = await users.findOne({ email: p.data.email });
     if (!u || !(await bcrypt.compare(p.data.password, u.passwordHash))) return res.status(401).json({ error: 'E-mail ou mot de passe incorrect.' });
+    if (u.totpEnabled) {
+      // Mot de passe bon : on demande le second facteur. L'appli renvoie e-mail, mot de passe et code.
+      const code = typeof req.body?.code === 'string' ? req.body.code : '';
+      if (!code) return res.status(401).json({ error: "Entre le code de ton appli d'authentification.", twoFactor: true });
+      const bad = await checkSecondFactor(u, code);
+      if (bad) return res.status(401).json({ error: bad, twoFactor: true });
+      return res.json({ token: sign(u), user: publicUser(await users.findOne({ _id: u._id })) });
+    }
     res.json({ token: sign(u), user: publicUser(u) });
   });
 
   app.get('/me', auth, (req, res) => res.json({ user: publicUser(req.user) }));
+
+  /* ---------- Double authentification ---------- */
+  // 1. Nouveau secret, gardé « en attente » tant qu'un premier code n'a pas été validé.
+  app.post('/me/2fa/setup', authLimiter, auth, async (req, res) => {
+    if (req.user.totpEnabled) return res.status(409).json({ error: 'La double authentification est déjà activée.' });
+    const secret = newSecret();
+    await users.updateOne({ _id: req.user._id }, { $set: { totpPending: seal(secret, totpKey) } });
+    const url = otpauthUrl(secret, req.user.email);
+    const qrSvg = await QRCode.toString(url, { type: 'svg', margin: 1, errorCorrectionLevel: 'M' });
+    res.json({ secret: secret.replace(/(.{4})/g, '$1 ').trim(), otpauthUrl: url, qrSvg });
+  });
+
+  // 2. Premier code valide : activation, codes de secours (montrés une seule fois) et nouvelle session.
+  app.post('/me/2fa/enable', authLimiter, auth, async (req, res) => {
+    const p = twoFactorCodeSchema.safeParse(req.body);
+    if (!p.success) return res.status(400).json({ error: 'Entre le code à 6 chiffres affiché par ton appli.' });
+    if (req.user.totpEnabled) return res.status(409).json({ error: 'La double authentification est déjà activée.' });
+    if (!req.user.totpPending) return res.status(400).json({ error: 'Recommence la configuration.' });
+    const step = verifyTotp(unseal(req.user.totpPending, totpKey), p.data.code);
+    if (step === null) return res.status(400).json({ error: "Code incorrect. Vérifie que l'heure de ton téléphone est automatique, puis réessaie." });
+    const codes = newRecoveryCodes();
+    await users.updateOne({ _id: req.user._id }, {
+      $set: { totpEnabled: true, totpSecret: req.user.totpPending, totpLastStep: step, recoveryHashes: codes.map(hashRecovery), totpFails: 0, sv: (req.user.sv || 0) + 1 },
+      $unset: { totpPending: '' },
+    });
+    const u = await users.findOne({ _id: req.user._id });
+    res.json({ token: sign(u), user: publicUser(u), recoveryCodes: codes });
+  });
+
+  // Désactivation : mot de passe et code (ou code de secours) exigés.
+  app.post('/me/2fa/disable', authLimiter, auth, async (req, res) => {
+    const p = twoFactorDisableSchema.safeParse(req.body);
+    if (!p.success) return res.status(400).json({ error: 'Mot de passe et code requis.' });
+    if (!req.user.totpEnabled) return res.json({ token: sign(req.user), user: publicUser(req.user) });
+    if (!(await bcrypt.compare(p.data.password, req.user.passwordHash))) return res.status(403).json({ error: 'Mot de passe incorrect.' });
+    const bad = await checkSecondFactor(req.user, p.data.code);
+    if (bad) return res.status(403).json({ error: bad });
+    await users.updateOne({ _id: req.user._id }, {
+      $set: { totpEnabled: false, sv: (req.user.sv || 0) + 1 },
+      $unset: { totpSecret: '', totpPending: '', totpLastStep: '', recoveryHashes: '', totpFails: '', totpLockedUntil: '' },
+    });
+    const u = await users.findOne({ _id: req.user._id });
+    res.json({ token: sign(u), user: publicUser(u) });
+  });
 
   app.delete('/me', auth, async (req, res) => {
     await events.deleteMany({ userId: req.user._id });

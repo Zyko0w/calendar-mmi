@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Agenda MMI</title>
+<title>Agend-A</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,200..800&family=Geist:wght@300..700&display=swap" rel="stylesheet">
@@ -15,7 +15,7 @@
   <aside class="side" id="side" aria-label="Résumé du jour">
     <div class="brand">
       <div class="mark" aria-hidden="true">MMI</div>
-      <div class="brand-t"><b>Agenda</b><span>BUT MMI 3</span></div>
+      <div class="brand-t"><b>Agend-A</b><span>BUT MMI 3</span></div>
       <button class="sync" id="sync" data-s="local" title="État de la synchronisation"><i></i><span>Cet appareil</span></button>
       <button class="ibtn sm" id="settingsBtn" aria-label="Réglages"></button>
     </div>
@@ -142,12 +142,21 @@
     <div class="auth-mark" aria-hidden="true">MMI</div>
     <h2 class="auth-t" id="authTitle">Connecte ton agenda</h2>
     <p class="auth-p">Un seul compte pour retrouver tes cours, rendus et alarmes sur ton PC et ton téléphone.</p>
+    <div id="aCreds">
     <div class="mseg auth-seg" id="authSeg"><button type="button" data-m="login" aria-pressed="true">Se connecter</button><button type="button" data-m="register" aria-pressed="false">Créer un compte</button></div>
     <label class="fld"><span>E-mail</span><input class="inp" type="email" id="aEmail" autocomplete="email" placeholder="prenom.nom@etu.univ.fr" required></label>
     <label class="fld"><span>Mot de passe</span><input class="inp" type="password" id="aPwd" autocomplete="current-password" minlength="8" placeholder="8 caractères minimum" required></label>
     <details class="adv"><summary>Adresse du serveur</summary><label class="fld"><span>URL de l'API</span><input class="inp" id="aApi" autocomplete="off" placeholder="https://agenda-mmi-api.onrender.com"></label></details>
+    </div>
+    <div id="aCodeBox" hidden>
+      <h3 class="tf-h">Double authentification</h3>
+      <p class="auth-p" id="aCodeHelp">Ouvre ton appli d'authentification et entre le code à 6 chiffres du compte Agend-A.</p>
+      <label class="fld"><span id="aCodeLbl">Code</span><input class="inp tf-code" id="aCode" autocomplete="one-time-code" inputmode="numeric" maxlength="7" placeholder="123 456"></label>
+      <button type="button" class="linkbtn" id="aRecov">Je n'ai plus accès à mon appli</button>
+    </div>
     <p class="err" id="aErr" role="alert"></p>
     <button type="submit" class="btn-save auth-go" id="aGo">Se connecter</button>
+    <button type="button" class="linkbtn auth-skip" id="aBack" hidden>Retour</button>
     <button type="button" class="linkbtn auth-skip" id="aSkip">Continuer sans compte, sur cet appareil seulement</button>
   </form>
 </div>
@@ -158,6 +167,10 @@
     <section class="set-sec">
       <h3>Compte</h3>
       <div id="setAccount"></div>
+    </section>
+    <section class="set-sec" id="setSecSec">
+      <h3>Sécurité</h3>
+      <div id="setSecurity"></div>
     </section>
     <section class="set-sec" id="setHpSec">
       <h3>Emploi du temps Hyperplanning</h3>
@@ -178,6 +191,13 @@
       <div class="set-row"><button type="button" class="btn-ghost" id="apiSave">Enregistrer l'adresse</button></div>
     </section>
   </div>
+</div>
+
+<div class="scrim" id="twofa" aria-hidden="true">
+  <form class="sheet auth tf" id="tfForm" role="dialog" aria-modal="true" aria-labelledby="tfTitle" novalidate>
+    <div class="sh-top"><span class="tf-k">Double authentification</span><button type="button" class="ibtn" id="tfClose" aria-label="Fermer"></button></div>
+    <div id="tfBody"></div>
+  </form>
 </div>
 
 <div class="toasts" id="toasts" aria-live="polite"></div>

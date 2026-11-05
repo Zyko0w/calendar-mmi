@@ -1,5 +1,5 @@
 /*
- * Noyau partagé de l'Agenda MMI : dates, récurrences, ajout rapide, alarmes et synchronisation.
+ * Noyau partagé d'Agend-A : dates, récurrences, ajout rapide, alarmes et synchronisation.
  * Ce fichier est copié tel quel dans desktop/web/core.js et mobile/src/core.js
  * par `node scripts/sync-core.mjs` (à la racine). Modifie-le ici, pas dans les copies.
  */
@@ -241,7 +241,7 @@ export function createSync({ storage, defaultApiUrl = '', fetchImpl = (...a) => 
     let data = {};
     try { data = await res.json(); } catch { /* corps vide */ }
     if (res.status === 401 && st.token) { await api.logout(true); onAuthLost(); }
-    if (!res.ok) throw Object.assign(new Error(data.error || `Erreur ${res.status}`), { status: res.status });
+    if (!res.ok) throw Object.assign(new Error(data.error || `Erreur ${res.status}`), { status: res.status, twoFactor: !!data.twoFactor });
     return data;
   }
 
@@ -273,8 +273,12 @@ export function createSync({ storage, defaultApiUrl = '', fetchImpl = (...a) => 
     hasLocalData: () => st.events.size > 0,
     async setApiUrl(url) { st.apiUrl = url.trim(); await write(KEYS.apiUrl, st.apiUrl); },
 
-    async login(email, password, register = false) {
-      const r = await request('POST', register ? '/auth/register' : '/auth/login', { email, password });
+    /**
+     * Connexion ou création de compte. Si le compte a la double authentification, le premier essai
+     * échoue avec err.twoFactor = true : redemander avec `code` (appli ou code de secours).
+     */
+    async login(email, password, register = false, code = '') {
+      const r = await request('POST', register ? '/auth/register' : '/auth/login', { email, password, ...(code ? { code } : {}) });
       st.token = r.token; st.user = r.user; st.lastSync = 0;
       await write(KEYS.token, st.token); await write(KEYS.user, st.user);
       // Les événements créés hors connexion partent vers le compte.
@@ -283,6 +287,25 @@ export function createSync({ storage, defaultApiUrl = '', fetchImpl = (...a) => 
       await api.sync();
       return st.user;
     },
+
+    /* Double authentification. Activer ou couper ferme les sessions des autres appareils :
+       le serveur renvoie un nouveau jeton pour celui-ci. */
+    /** Renvoie { secret, otpauthUrl, qrSvg } pour configurer l'appli d'authentification. */
+    twoFactorSetup: () => request('POST', '/me/2fa/setup'),
+    /** Valide le premier code et renvoie les codes de secours (à montrer une seule fois). */
+    async twoFactorEnable(code) {
+      const r = await request('POST', '/me/2fa/enable', { code });
+      st.token = r.token; st.user = r.user;
+      await write(KEYS.token, st.token); await write(KEYS.user, st.user);
+      return r.recoveryCodes;
+    },
+    async twoFactorDisable(password, code) {
+      const r = await request('POST', '/me/2fa/disable', { password, code });
+      st.token = r.token; st.user = r.user;
+      await write(KEYS.token, st.token); await write(KEYS.user, st.user);
+      return st.user;
+    },
+
     async logout(keepData = false) {
       st.token = null; st.user = null; st.lastSync = 0;
       if (!keepData) { st.events.clear(); st.outbox = {}; }

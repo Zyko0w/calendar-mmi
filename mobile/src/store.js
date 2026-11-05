@@ -2,10 +2,8 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createSync, makeDemo } from './core';
-
-const DEFAULT_API = process.env.EXPO_PUBLIC_API_URL || 'https://agenda-mmi-api.onrender.com';
-const PREFS_KEY = 'agenda:prefs';
-const DEFAULT_PREFS = { theme: 'auto', hidden: [], skipLogin: false, lastType: 'cours' };
+import { DEFAULT_API, DEFAULT_PREFS, PREFS_KEY } from './config';
+import { setLiveSync, updateWidgets } from './widgets';
 
 const StoreContext = createContext(null);
 export const useStore = () => useContext(StoreContext);
@@ -28,6 +26,7 @@ export function StoreProvider({ children }) {
     });
   }
   const sync = syncRef.current;
+  setLiveSync(sync);
 
   useEffect(() => {
     (async () => {
@@ -41,9 +40,20 @@ export function StoreProvider({ children }) {
       if (sync.isLoggedIn()) sync.start(30000);
       setReady(true);
     })();
-    const sub = AppState.addEventListener('change', (s) => { if (s === 'active') sync.sync({ refreshHp: true }); });
-    return () => { sub.remove(); sync.stop(); };
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s === 'active') sync.sync({ refreshHp: true });
+      // En quittant l'appli, les widgets repartent d'un rendu à jour (« Dans 35 min »…).
+      else if (s === 'background') updateWidgets(sync.list()).catch(() => {});
+    });
+    return () => { sub.remove(); sync.stop(); setLiveSync(null); };
   }, [sync]);
+
+  // Widgets d'écran d'accueil : redessinés à chaque changement d'événements, de calques masqués ou de thème.
+  useEffect(() => {
+    if (!ready) return;
+    const id = setTimeout(() => updateWidgets(events, prefs).catch(() => {}), 400);
+    return () => clearTimeout(id);
+  }, [ready, events, prefs.hidden, prefs.theme]);
 
   const value = useMemo(() => ({
     sync, events, status, ready, prefs, authLost,

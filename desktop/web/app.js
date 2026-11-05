@@ -569,7 +569,28 @@ function setAuthMode(m) {
   $('#aPwd').autocomplete = m === 'login' ? 'current-password' : 'new-password';
   $('#aErr').textContent = '';
 }
+/* Deuxième étape quand le compte a la double authentification. */
+let needCode = false, recovery = false;
+function setRecovery(on) {
+  recovery = on;
+  $('#aCodeHelp').textContent = on ? "Entre un de tes codes de secours. Il ne servira qu'une fois." : "Ouvre ton appli d'authentification et entre le code à 6 chiffres du compte Agend-A.";
+  $('#aCodeLbl').textContent = on ? 'Code de secours' : 'Code';
+  const c = $('#aCode'); c.value = ''; c.maxLength = on ? 11 : 7; c.placeholder = on ? 'ABCDE-FGH23' : '123 456'; c.inputMode = on ? 'text' : 'numeric';
+  $('#aRecov').textContent = on ? "Utiliser le code de l'appli" : "Je n'ai plus accès à mon appli";
+}
+function showCodeStep(on) {
+  needCode = on;
+  $('#aCreds').hidden = on; $('#aCodeBox').hidden = !on; $('#aBack').hidden = !on; $('#aSkip').hidden = on;
+  $('#authTitle').textContent = on ? 'Encore une étape' : 'Connecte ton agenda';
+  $('#aErr').textContent = '';
+  setRecovery(false);
+  $('#aGo').textContent = on ? 'Valider' : authMode === 'login' ? 'Se connecter' : 'Créer mon compte';
+  if (on) setTimeout(() => $('#aCode').focus(), 60);
+}
+$('#aRecov').onclick = () => { setRecovery(!recovery); $('#aCode').focus(); };
+$('#aBack').onclick = () => showCodeStep(false);
 function openLogin() {
+  showCodeStep(false);
   $('#aApi').value = sync.state.apiUrl || '';
   const l = $('#login'); l.classList.add('on'); l.setAttribute('aria-hidden', 'false');
   setTimeout(() => $('#aEmail').focus(), 60);
@@ -581,17 +602,28 @@ $('#loginForm').addEventListener('submit', async (e) => {
   const email = $('#aEmail').value.trim(), pwd = $('#aPwd').value;
   if (!email || !pwd) { $('#aErr').textContent = 'Renseigne ton e-mail et ton mot de passe.'; return; }
   if ($('#aApi').value.trim()) await sync.setApiUrl($('#aApi').value);
-  const btn = $('#aGo'); btn.disabled = true; btn.textContent = 'Connexion…';
+  const code = needCode ? $('#aCode').value.trim() : '';
+  if (needCode && code.replace(/[\s-]/g, '').length < 6) { $('#aErr').textContent = 'Entre le code complet.'; return; }
+  const btn = $('#aGo'); btn.disabled = true; btn.textContent = needCode ? 'Vérification…' : 'Connexion…';
+  let ok = false;
   try {
     sync.clearDemo();
-    await sync.login(email, pwd, authMode === 'register');
+    await sync.login(email, pwd, authMode === 'register', code);
+    ok = true;
     LS.set('skipLogin', false);
     closeLogin(); sync.start(30000);
-    toast(authMode === 'register' ? 'Compte créé. Ajoute ton lien Hyperplanning dans les réglages.' : 'Connecté, tes événements sont synchronisés.');
-    if (authMode === 'register') setTimeout(openSettings, 600);
+    toast(authMode === 'register' ? 'Compte créé.' : 'Connecté, tes événements sont synchronisés.');
+    // Compte tout neuf : on propose tout de suite la double authentification, puis les réglages.
+    // Connexion ou compte neuf sans double authentification : on la propose. Les réglages suivent pour un compte neuf.
+    if (authMode === 'register' || !sync.state.user?.twoFactor) setTimeout(() => openTwoFa('enable', true, authMode === 'register'), 500);
   } catch (err) {
-    $('#aErr').textContent = err.message;
-  } finally { btn.disabled = false; setAuthMode(authMode); }
+    if (err.twoFactor && !needCode) showCodeStep(true);
+    else $('#aErr').textContent = err.message;
+  } finally {
+    btn.disabled = false;
+    if (ok) showCodeStep(false);
+    else btn.textContent = needCode ? 'Valider' : authMode === 'login' ? 'Se connecter' : 'Créer mon compte';
+  }
 });
 $('#aSkip').onclick = () => { LS.set('skipLogin', true); closeLogin(); if (!sync.hasLocalData()) sync.seedDemo(makeDemo()); };
 
@@ -602,6 +634,13 @@ function renderSettings() {
   $('#setAccount').innerHTML = u
     ? `<div class="acct"><b>${esc(u.email)}</b><button type="button" class="btn-ghost" id="logoutBtn">Se déconnecter</button><button type="button" class="btn-del" id="delAcct">Supprimer mon compte</button></div>`
     : `<div class="acct"><b>Pas connecté : tes événements restent sur ce PC.</b><button type="button" class="btn-save" id="loginBtn">Se connecter</button></div>`;
+  $('#setSecSec').hidden = !u;
+  if (u) {
+    const n = u.recoveryLeft;
+    $('#setSecurity').innerHTML = `<p class="tf-st"><span class="tf-dot${u.twoFactor ? ' on' : ''}"></span>${u.twoFactor ? 'Double authentification activée' : 'Double authentification désactivée'}</p>
+      <p class="set-help">${u.twoFactor ? `La connexion demande un code de ton appli d'authentification. ${n} code${n > 1 ? 's' : ''} de secours restant${n > 1 ? 's' : ''}.` : "Ajoute un code à 6 chiffres donné par une appli d'authentification (Google Authenticator, Aegis, 2FAS…), en plus du mot de passe."}</p>
+      <button type="button" class="${u.twoFactor ? 'btn-ghost' : 'btn-save'}" id="tfOpen">${u.twoFactor ? 'Désactiver' : 'Activer la double authentification'}</button>`;
+  }
   $('#setHpSec').style.opacity = u ? 1 : 0.5;
   ['#hpUrl', '#hpSave', '#hpSync', '#hpRemove'].forEach((s) => { $(s).disabled = !u; });
   $('#hpUrl').value = u?.hpUrl || '';
@@ -639,6 +678,87 @@ $('#hpAlApply').onclick = async () => {
     toast(`Alarmes mises à jour sur ${r.count} cours Hyperplanning`);
   } catch (err) { st.classList.add('bad'); st.textContent = err.message; } finally { btn.disabled = false; }
 };
+/* ---------- Double authentification ---------- */
+let tf = { mode: 'enable', fromSignup: false, step: 'intro', setup: null, codes: [] };
+const tfBusy = (label) => { const b = $('#tfGo'); if (b) { b.disabled = true; b.textContent = label; } };
+function renderTwoFa(err = '') {
+  const e = `<p class="err" role="alert">${esc(err)}</p>`;
+  let h = '';
+  if (tf.mode === 'disable') {
+    h = `<h2 class="auth-t" id="tfTitle">Désactiver la double authentification</h2>
+      <p class="auth-p">Ton compte ne sera plus protégé que par ton mot de passe. Tes autres appareils seront déconnectés.</p>
+      <label class="fld"><span>Mot de passe</span><input class="inp" type="password" id="tfPwd" autocomplete="current-password"></label>
+      <label class="fld"><span>Code de l'appli ou code de secours</span><input class="inp tf-code" id="tfCode" autocomplete="one-time-code" maxlength="11" placeholder="123456"></label>
+      ${e}<button type="submit" class="btn-del auth-go" id="tfGo">Désactiver</button>`;
+  } else if (tf.step === 'intro') {
+    h = `<h2 class="auth-t" id="tfTitle">${tf.fromSignup ? (tf.isNew ? 'Protège ton nouveau compte' : 'Protège ton compte') : 'Activer la double authentification'}</h2>
+      <p class="auth-p">En plus du mot de passe, la connexion demandera un code à 6 chiffres donné par une appli d'authentification sur ton téléphone (Google Authenticator, Aegis, 2FAS, Microsoft Authenticator…). Même si quelqu'un trouve ton mot de passe, il ne pourra pas entrer.</p>
+      ${e}<button type="submit" class="btn-save auth-go" id="tfGo">Configurer</button>
+      ${tf.fromSignup ? '<button type="button" class="linkbtn auth-skip" id="tfLater">Plus tard, dans les réglages</button>' : ''}`;
+  } else if (tf.step === 'setup') {
+    // Le QR code passe par une balise image : un SVG reçu du serveur ne peut ainsi exécuter aucun script.
+    const qr = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(tf.setup.qrSvg);
+    h = `<h2 class="auth-t" id="tfTitle">Scanne ce QR code</h2>
+      <p class="auth-p">Dans ton appli d'authentification, ajoute un compte et scanne le code. Tu peux aussi recopier la clé.</p>
+      <img class="tf-qr" src="${qr}" alt="QR code à scanner avec ton appli d'authentification">
+      <div class="tf-key">Clé (compte « Agend-A »)<b>${esc(tf.setup.secret)}</b></div>
+      <label class="fld"><span>Code affiché par l'appli</span><input class="inp tf-code" id="tfCode" autocomplete="one-time-code" inputmode="numeric" maxlength="7" placeholder="123 456"></label>
+      ${e}<button type="submit" class="btn-save auth-go" id="tfGo">Activer</button>`;
+  } else {
+    h = `<h2 class="auth-t" id="tfTitle">C'est activé. Garde tes codes de secours</h2>
+      <p class="auth-p">Si tu perds ton téléphone, chaque code permet une connexion à la place de l'appli. Ils ne seront plus affichés : enregistre-les dans un gestionnaire de mots de passe ou note-les sur papier.</p>
+      <div class="tf-codes">${tf.codes.map((c) => `<span>${esc(c)}</span>`).join('')}</div>
+      <div class="set-row"><button type="button" class="btn-ghost" id="tfCopy">Copier les codes</button></div>
+      <button type="submit" class="btn-save auth-go" id="tfGo" style="margin-top:14px">J'ai gardé mes codes</button>`;
+  }
+  $('#tfBody').innerHTML = h;
+  setTimeout(() => ($('#tfPwd') || $('#tfCode') || $('#tfGo'))?.focus(), 60);
+}
+function openTwoFa(mode, fromSignup = false, isNew = false) {
+  closeSettings();
+  tf = { mode, fromSignup, isNew, step: 'intro', setup: null, codes: [] };
+  renderTwoFa();
+  const s = $('#twofa'); s.classList.add('on'); s.setAttribute('aria-hidden', 'false');
+}
+function closeTwoFa() {
+  const s = $('#twofa'); s.classList.remove('on'); s.setAttribute('aria-hidden', 'true');
+  if (tf.isNew) setTimeout(openSettings, 300);
+}
+$('#tfClose').onclick = closeTwoFa;
+$('#tfBody').addEventListener('click', (e) => {
+  if (e.target.id === 'tfLater') closeTwoFa();
+  if (e.target.id === 'tfCopy') {
+    navigator.clipboard?.writeText(`Codes de secours Agend-A (${sync.state.user?.email}) :\n${tf.codes.join('\n')}`)
+      .then(() => toast('Codes copiés'), () => toast('Copie impossible, sélectionne-les à la main.'));
+  }
+});
+$('#tfForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const code = ($('#tfCode')?.value || '').trim();
+  const pwd = $('#tfPwd')?.value || '';
+  try {
+    if (tf.mode === 'disable') {
+      if (!pwd || code.length < 6) { renderTwoFa('Mot de passe et code requis.'); $('#tfPwd').value = pwd; return; }
+      tfBusy('Vérification…');
+      await sync.twoFactorDisable(pwd, code);
+      toast('Double authentification désactivée.'); closeTwoFa();
+    } else if (tf.step === 'intro') {
+      tfBusy('Préparation…');
+      tf.setup = await sync.twoFactorSetup(); tf.step = 'setup'; renderTwoFa();
+    } else if (tf.step === 'setup') {
+      if (code.replace(/\s/g, '').length !== 6) { renderTwoFa('Entre le code à 6 chiffres.'); return; }
+      tfBusy('Vérification…');
+      tf.codes = await sync.twoFactorEnable(code.replace(/\s/g, '')); tf.step = 'codes'; renderTwoFa();
+    } else {
+      toast('Double authentification activée. Tes autres appareils devront se reconnecter.'); closeTwoFa();
+    }
+  } catch (err) {
+    renderTwoFa(err.message);
+    if (pwd && $('#tfPwd')) $('#tfPwd').value = pwd;
+  }
+});
+$('#setSecurity').addEventListener('click', (e) => { if (e.target.id === 'tfOpen') openTwoFa(sync.state.user?.twoFactor ? 'disable' : 'enable'); });
+
 function openSettings() { closeDrawer(); renderSettings(); const s = $('#settings'); s.classList.add('on'); s.setAttribute('aria-hidden', 'false'); }
 function closeSettings() { const s = $('#settings'); s.classList.remove('on'); s.setAttribute('aria-hidden', 'true'); }
 $('#settingsBtn').onclick = openSettings; $('#setClose').onclick = closeSettings;
@@ -699,12 +819,13 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if ($('#alarm').classList.contains('on')) { dismiss(); return; }
     if (editing) { closeEditor(); return; }
+    if ($('#twofa').classList.contains('on')) { closeTwoFa(); return; }
     if ($('#settings').classList.contains('on')) { closeSettings(); return; }
     closeDrawer(); return;
   }
   const tag = (e.target.tagName || '').toLowerCase();
   if (tag === 'input' || tag === 'textarea' || tag === 'select' || editing || ringing || e.metaKey || e.ctrlKey || e.altKey) return;
-  if ($('#login').classList.contains('on') || $('#settings').classList.contains('on')) return;
+  if ($('#login').classList.contains('on') || $('#settings').classList.contains('on') || $('#twofa').classList.contains('on')) return;
   const k = e.key.toLowerCase();
   if (k === 'n') { e.preventDefault(); openEditor(null); }
   else if (k === 't') goToday();

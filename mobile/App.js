@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, StatusBar, useColorScheme, View } from 'react-native';
+import { Linking, Pressable, StatusBar, useColorScheme, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
 import * as SystemUI from 'expo-system-ui';
@@ -16,9 +16,10 @@ import MonthScreen from './src/screens/MonthScreen';
 import AgendaScreen from './src/screens/AgendaScreen';
 import EditorSheet from './src/screens/EditorSheet';
 import SettingsSheet from './src/screens/SettingsSheet';
+import TwoFactorSheet from './src/screens/TwoFactorSheet';
 import AuthScreen from './src/screens/AuthScreen';
 import AlarmOverlay from './src/screens/AlarmOverlay';
-import { today0, key } from './src/core';
+import { today0, key, findOcc } from './src/core';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -66,6 +67,10 @@ function Main() {
   const [settings, setSettings] = useState(false);
   const [auth, setAuth] = useState(false);
   const [alarm, setAlarm] = useState(null);
+  const [link, setLink] = useState(null);
+  const [quickFocus, setQuickFocus] = useState(false);
+  // Double authentification : { mode: 'enable' | 'disable', fromSignup }.
+  const [twoFa, setTwoFa] = useState(null);
 
   // Premier lancement sans compte : écran de connexion.
   useEffect(() => { if (ready && !sync.isLoggedIn() && !prefs.skipLogin) setAuth(true); }, [ready]);
@@ -92,6 +97,26 @@ function Main() {
     return () => { received.remove(); response.remove(); };
   }, []);
 
+  // Liens ouverts depuis les widgets : agendammi://event?oid=… et agendammi://new.
+  useEffect(() => {
+    Linking.getInitialURL().then((u) => u && setLink(u)).catch(() => {});
+    const sub = Linking.addEventListener('url', ({ url }) => setLink(url));
+    return () => sub.remove();
+  }, []);
+  useEffect(() => {
+    if (!link || !ready || auth) return;
+    setLink(null);
+    const m = /^agendammi:\/\/([a-z]+)\/?(?:\?(.*))?$/.exec(link);
+    if (!m) return;
+    const q = Object.fromEntries((m[2] || '').split('&').filter(Boolean).map((kv) => kv.split('=').map(decodeURIComponent)));
+    if (m[1] === 'event' && q.oid) {
+      const o = findOcc(events, q.oid);
+      if (o) setEditor({ ev: o.ev, occDate: o.date });
+    } else if (m[1] === 'new') {
+      setEditor(null); setSettings(false); setTab('today'); setQuickFocus(true);
+    }
+  }, [link, ready, auth, events]);
+
   // Chaque changement d'événements reprogramme les alarmes du système.
   useEffect(() => { if (ready) rescheduleAlarms(events); }, [events, ready]);
 
@@ -110,7 +135,9 @@ function Main() {
           setAuth(false);
           const p = await permissionState();
           if (!p.exact) askExactAlarmPermission();
-          if (isNew) setTimeout(() => setSettings(true), 400);
+          // Connexion ou compte tout neuf sans double authentification : on la propose tout de suite.
+          // Pour un nouveau compte, les réglages (Hyperplanning) s'ouvrent ensuite.
+          if (isNew || !sync.state.user?.twoFactor) setTimeout(() => setTwoFa({ mode: 'enable', fromSignup: true, isNew }), 400);
         }}
         onCancel={() => setAuth(false)}
       />
@@ -120,14 +147,18 @@ function Main() {
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: t.bg }}>
       <View style={{ flex: 1, paddingBottom: 70 }}>
-        {tab === 'today' && <TodayScreen onOpen={openEv} onSettings={() => setSettings(true)} />}
+        {tab === 'today' && <TodayScreen onOpen={openEv} onSettings={() => setSettings(true)} focusQuick={quickFocus} onQuickFocused={() => setQuickFocus(false)} />}
         {tab === 'week' && <WeekScreen onOpen={openEv} onCreate={create} />}
         {tab === 'month' && <MonthScreen onOpen={openEv} onCreate={create} />}
         {tab === 'agenda' && <AgendaScreen onOpen={openEv} />}
       </View>
       <TabBar tab={tab} setTab={setTab} onNew={newEvent} />
       <EditorSheet target={editor} onClose={() => setEditor(null)} />
-      <SettingsSheet visible={settings} onClose={() => setSettings(false)} onLogin={() => setAuth(true)} />
+      <SettingsSheet visible={settings} onClose={() => setSettings(false)} onLogin={() => setAuth(true)} onTwoFactor={(mode) => setTimeout(() => setTwoFa({ mode }), 350)} />
+      <TwoFactorSheet
+        visible={!!twoFa} mode={twoFa?.mode} fromSignup={twoFa?.fromSignup} isNew={twoFa?.isNew}
+        onClose={() => { const after = twoFa?.isNew; setTwoFa(null); if (after) setTimeout(() => setSettings(true), 400); }}
+      />
       <AlarmOverlay data={alarm} onClose={() => setAlarm(null)} />
     </SafeAreaView>
   );

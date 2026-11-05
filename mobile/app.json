@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Agenda MMI",
+    "name": "Agend-A",
     "slug": "agenda-mmi",
     "scheme": "agendammi",
     "version": "1.0.0",
@@ -50,7 +50,53 @@
           }
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "react-native-android-widget",
+        {
+          "fonts": [
+            "./node_modules/@expo-google-fonts/geist/400Regular/Geist_400Regular.ttf",
+            "./node_modules/@expo-google-fonts/geist/500Medium/Geist_500Medium.ttf",
+            "./node_modules/@expo-google-fonts/geist/600SemiBold/Geist_600SemiBold.ttf",
+            "./node_modules/@expo-google-fonts/bricolage-grotesque/200ExtraLight/BricolageGrotesque_200ExtraLight.ttf"
+          ],
+          "widgets": [
+            {
+              "name": "AgendaNext",
+              "label": "Prochain cours",
+              "description": "Le prochain cours ou rendu, avec le temps restant.",
+              "minWidth": "110dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 2,
+              "targetCellHeight": 2,
+              "resizeMode": "horizontal|vertical",
+              "updatePeriodMillis": 1800000
+            },
+            {
+              "name": "AgendaToday",
+              "label": "Aujourd'hui",
+              "description": "La date et les créneaux de la journée.",
+              "minWidth": "250dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 2,
+              "resizeMode": "horizontal|vertical",
+              "updatePeriodMillis": 1800000
+            },
+            {
+              "name": "AgendaFull",
+              "label": "Journée et rendus",
+              "description": "La journée, les rendus à venir et l’ajout rapide.",
+              "minWidth": "250dp",
+              "minHeight": "250dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 4,
+              "resizeMode": "horizontal|vertical",
+              "updatePeriodMillis": 1800000
+            }
+          ]
+        }
+      ]
     ],
     "extra": {
       "eas": {

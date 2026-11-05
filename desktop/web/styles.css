@@ -431,6 +431,21 @@ button.sync{cursor:pointer;font:inherit;font-size:11.5px}
 .hp-al h4{margin:0 0 4px;font-size:13.5px;font-weight:600}
 .hp-al[hidden]{display:none}
 .acct b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+/* Double authentification */
+#aCodeBox[hidden],#aCreds[hidden],#aBack[hidden]{display:none}
+.tf-h{margin:0 0 6px;font-size:17px;font-weight:600}
+.tf-code{font-size:22px;letter-spacing:.2em;text-align:center;height:50px}
+.tf{max-width:460px}
+.tf .sh-top{margin:-6px 0 8px}
+.tf-k{flex:1;font-size:13px;color:var(--muted);font-weight:500}
+.tf-st{display:flex;align-items:center;gap:8px;margin:0 0 6px;font-weight:550}
+.tf-dot{width:8px;height:8px;border-radius:50%;background:var(--c-eval)}
+.tf-dot.on{background:var(--c-stage)}
+.tf-qr{display:block;width:184px;height:184px;margin:4px auto 14px;padding:10px;background:#fff;border-radius:14px}
+.tf-key{background:var(--surface-2);border-radius:10px;padding:10px 12px;margin:0 0 16px;font-size:12px;color:var(--muted)}
+.tf-key b{display:block;color:var(--ink);font-size:15px;letter-spacing:.08em;user-select:all;margin-top:2px}
+.tf-codes{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;background:var(--surface-2);border-radius:12px;padding:14px 16px;margin:0 0 14px;font-weight:600;font-size:15px;letter-spacing:.06em;user-select:all;font-variant-numeric:tabular-nums}
+.tf .set-row{margin-top:6px}
 
 .achips{display:flex;flex-wrap:wrap;gap:6px}
 .achip{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:99px;background:var(--surface);box-shadow:var(--ring);font-size:13px;transition:.15s}

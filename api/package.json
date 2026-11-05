@@ -2,7 +2,7 @@
   "name": "agenda-mmi-api",
   "version": "1.0.0",
   "private": true,
-  "description": "API de synchronisation de l'Agenda MMI (MongoDB + import Hyperplanning)",
+  "description": "API de synchronisation d'Agend-A (MongoDB + import Hyperplanning)",
   "type": "module",
   "main": "src/server.js",
   "engines": {
@@ -22,6 +22,7 @@
     "jsonwebtoken": "^9.0.2",
     "mongodb": "^7.0.0",
     "node-ical": "^0.27.0",
+    "qrcode": "^1.5.4",
     "zod": "^4.1.0"
   },
   "devDependencies": {

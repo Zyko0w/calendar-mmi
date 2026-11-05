@@ -37,7 +37,7 @@ pub fn run() {
             let boot_item = boot.clone();
             TrayIconBuilder::with_id("main-tray")
                 .icon(app.default_window_icon().unwrap().clone())
-                .tooltip("Agenda MMI : les alarmes restent actives")
+                .tooltip("Agend-A : les alarmes restent actives")
                 .menu(&menu)
                 .on_menu_event(move |app, event| match event.id.as_ref() {
                     "open" => show_main(app),
@@ -78,5 +78,5 @@ pub fn run() {
             }
         })
         .run(tauri::generate_context!())
-        .expect("impossible de démarrer Agenda MMI");
+        .expect("impossible de démarrer Agend-A");
 }

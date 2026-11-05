@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, TextInput, View } from 'react-native';
 import {
   TYPES, MONTHS, WD, pad, today0, wdIdx, isoWeek, semester, rel, niceDate, fmtMin, at, isPoint, clamp,
@@ -14,8 +14,15 @@ function useNow(ms = 15000) {
   return now;
 }
 
-export function QuickAdd({ onCreated }) {
+export function QuickAdd({ onCreated, focus, onFocused }) {
   const t = useTheme();
+  const input = useRef(null);
+  // Bouton « + » du widget : on arrive directement dans le champ.
+  useEffect(() => {
+    if (!focus) return;
+    const id = setTimeout(() => { input.current?.focus(); onFocused?.(); }, 350);
+    return () => clearTimeout(id);
+  }, [focus]);
   const { sync, setPref } = useStore();
   const toast = useToast();
   const [v, setV] = useState('');
@@ -30,6 +37,7 @@ export function QuickAdd({ onCreated }) {
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
         <View style={{ position: 'absolute', left: 13, zIndex: 1 }}><Icon name="zap" size={16} color={t.muted} /></View>
         <TextInput
+          ref={input}
           value={v} onChangeText={setV} onSubmitEditing={submit} returnKeyType="done"
           placeholder="TD UX demain 14h-16h salle 108" placeholderTextColor={t.muted}
           accessibilityLabel="Ajout rapide"
@@ -62,7 +70,7 @@ function Tag({ children, color, icon }) {
   );
 }
 
-export default function TodayScreen({ onOpen, onSettings }) {
+export default function TodayScreen({ onOpen, onSettings, focusQuick, onQuickFocused }) {
   const t = useTheme();
   const { events, hidden, sync, status } = useStore();
   const toast = useToast();
@@ -83,7 +91,7 @@ export default function TodayScreen({ onOpen, onSettings }) {
           <T weight="displayHeavy" size={11} color={t.bg}>MMI</T>
         </View>
         <View style={{ flex: 1 }}>
-          <T weight="bodySemi" size={15}>Agenda</T>
+          <T weight="bodySemi" size={15}>Agend-A</T>
           <T muted size={12}>BUT MMI 3</T>
         </View>
         <Pressable onPress={() => { tap(); if (sync.isLoggedIn()) sync.sync(); else onSettings(); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 99, backgroundColor: t.surface, borderWidth: 1, borderColor: t.line }}>
@@ -134,7 +142,7 @@ export default function TodayScreen({ onOpen, onSettings }) {
           </View>
         )}
       </Pressable>
-      <QuickAdd onCreated={(ev) => onOpen(ev, ev.date)} />
+      <QuickAdd onCreated={(ev) => onOpen(ev, ev.date)} focus={focusQuick} onFocused={onQuickFocused} />
 
       {sync.hasDemo() && (
         <View style={{ borderRadius: 14, borderWidth: 1, borderColor: t.line, padding: 14, gap: 10, backgroundColor: t.surface }}>
