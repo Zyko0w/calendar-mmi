@@ -26,7 +26,11 @@
     "android": "expo run:android",
     "build:apk": "eas build -p android --profile preview",
     "build:aab": "eas build -p android --profile production",
-    "doctor": "expo-doctor"
+    "doctor": "expo-doctor",
+    "postinstall": "patch-package"
   },
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "patch-package": "^8.0.1"
+  }
 }

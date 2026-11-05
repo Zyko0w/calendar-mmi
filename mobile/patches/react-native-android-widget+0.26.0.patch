@@ -1,0 +1,71 @@
+diff --git a/node_modules/react-native-android-widget/android/src/main/java/com/reactnativeandroidwidget/RNWidget.java b/node_modules/react-native-android-widget/android/src/main/java/com/reactnativeandroidwidget/RNWidget.java
+index a68fef1..6f43ee3 100644
+--- a/node_modules/react-native-android-widget/android/src/main/java/com/reactnativeandroidwidget/RNWidget.java
++++ b/node_modules/react-native-android-widget/android/src/main/java/com/reactnativeandroidwidget/RNWidget.java
+@@ -83,6 +83,7 @@ public class RNWidget {
+ 
+         List<List<String>> lightImageNames = new ArrayList<>();
+         List<List<String>> darkImageNames = new ArrayList<>();
++        String darkImageName = null;
+         if (dark != null) {
+             WidgetWithViews darkWidgetWithViews = WidgetFactory.buildWidgetFromRoot(
+                 appContext,
+@@ -94,6 +95,7 @@ public class RNWidget {
+             Bitmap darkBitmap = drawViewToBitmap(darkWidgetWithViews.getRootView());
+             Uri darkBitmapUri = saveBitmapToDisk(widgetId, "dark", darkBitmap);
+             remoteWidgetView.setImageViewUri(R.id.rn_widget_image_dark, darkBitmapUri);
++            darkImageName = darkBitmapUri.getLastPathSegment();
+ 
+             List<CollectionView> lightCollectionViews = widgetWithViews.getCollectionViews();
+             List<CollectionView> darkCollectionViews = darkWidgetWithViews.getCollectionViews();
+@@ -120,6 +122,10 @@ public class RNWidget {
+ 
+         AppWidgetManager.getInstance(appContext)
+             .updateAppWidget(widgetId, remoteWidgetView);
++
++        // Keep the previous image too: the launcher may still be loading it asynchronously.
++        RNWidgetImageProvider.pruneMainImages(appContext, widgetId, "light", bitmapUri.getLastPathSegment());
++        RNWidgetImageProvider.pruneMainImages(appContext, widgetId, "dark", darkImageName);
+     }
+ 
+     public WritableMap createPreview(int width, int height) throws Exception {
+@@ -149,8 +155,8 @@ public class RNWidget {
+ 
+     private Uri saveBitmapToDisk(int widgetId, String mode, Bitmap bitmap) {
+         String imagePrefix = "widget_" + widgetId + "_mode_" + mode;
+-        // Previously the fixed filename was overwritten on every render.
+-        RNWidgetImageProvider.deleteMainImage(appContext, widgetId, mode);
++        // Old images are pruned only after updateAppWidget (see drawWidget): deleting them first
++        // leaves the widget pointing at a missing file if the process dies mid-render.
+         String fileName = RNWidgetImageProvider.writeImage(appContext, imagePrefix, bitmap);
+         return RNWidgetImageProvider.getImageUri(appContext, fileName);
+     }
+diff --git a/node_modules/react-native-android-widget/android/src/main/java/com/reactnativeandroidwidget/RNWidgetImageProvider.java b/node_modules/react-native-android-widget/android/src/main/java/com/reactnativeandroidwidget/RNWidgetImageProvider.java
+index 3580e1d..13a5da4 100644
+--- a/node_modules/react-native-android-widget/android/src/main/java/com/reactnativeandroidwidget/RNWidgetImageProvider.java
++++ b/node_modules/react-native-android-widget/android/src/main/java/com/reactnativeandroidwidget/RNWidgetImageProvider.java
+@@ -105,6 +105,24 @@ public class RNWidgetImageProvider extends ContentProvider {
+         }
+     }
+ 
++    /** Deletes the main images of a widget except {@code current} and the most recent other one. */
++    static void pruneMainImages(Context context, int widgetId, String mode, String current) {
++        String prefix = "widget_" + widgetId + "_mode_" + mode;
++        File[] files = getFolderWithImages(context).listFiles(file ->
++            !file.getName().equals(current)
++                && (file.getName().equals(prefix + ".png")
++                    || (file.getName().startsWith(prefix + "_")
++                        && !file.getName().startsWith(prefix + "_collection_")))
++        );
++        if (files == null || files.length <= 1) {
++            return;
++        }
++        java.util.Arrays.sort(files, (a, b) -> Long.compare(b.lastModified(), a.lastModified()));
++        for (int i = 1; i < files.length; i++) {
++            files[i].delete();
++        }
++    }
++
+     private static void deleteImages(Context context, String prefix) {
+         File folder = getFolderWithImages(context);
+         File[] files = folder.listFiles(pathname -> pathname.getName().startsWith(prefix));
