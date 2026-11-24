@@ -18,6 +18,13 @@ export const ALARMS = [
   [30, '30 min avant'], [60, '1 h avant'], [120, '2 h avant'], [1440, 'La veille (24 h avant)'], [10080, '1 semaine avant'],
 ];
 export const MAX_ALARMS = 4;
+/** Statut d'un cours Hyperplanning : 'annule', 'reporte', 'conge' (férié, vacances) ou ''. */
+export const HP_STATUS = { annule: 'Annulé', reporte: 'Reporté', conge: 'Congé' };
+export const hpStatusLabel = (ev) => (ev && HP_STATUS[ev.hpStatus]) || '';
+/** Cours annulé ou reporté : il n'a pas lieu à cet horaire. */
+export const isCancelled = (ev) => !!ev && (ev.hpStatus === 'annule' || ev.hpStatus === 'reporte');
+/** Ne sonne pas et ne compte pas comme « prochain cours » : annulé, reporté, férié ou vacances. */
+export const isInactive = (ev) => !!ev && !!HP_STATUS[ev.hpStatus];
 const SHORT = { 0: "à l'heure", 1440: 'la veille', 10080: '1 semaine avant' };
 export const alarmLabel = (a) => (ALARMS.find((x) => x[0] === a) || [a, a == null ? 'Aucune' : `${a} min avant`])[1];
 /** Liste des rappels d'un événement (anciens événements : champ `alarm` unique). Triée du plus tôt au plus tard. */
@@ -116,6 +123,7 @@ export function nextOccurrence(events, hidden, now = Date.now()) {
   const t = today0();
   return occurrences(events, t, addDays(t, 21), hidden).find((o) => {
     const st = at(o.date, o.s).getTime(), en = at(o.date, o.e).getTime();
+    if (isInactive(o.ev)) return false;
     return isPoint(o) ? st > now && !o.ev.done : en > now;
   }) || null;
 }
@@ -123,7 +131,7 @@ export function nextOccurrence(events, hidden, now = Date.now()) {
 /** Rendus et évaluations à venir (non terminés). */
 export function upcomingDeadlines(events, days = 45, now = Date.now()) {
   const t = today0();
-  return occurrences(events, t, addDays(t, days)).filter((o) => (o.ev.type === 'rendu' || o.ev.type === 'eval') && !o.ev.done && at(o.date, o.s).getTime() > now);
+  return occurrences(events, t, addDays(t, days)).filter((o) => (o.ev.type === 'rendu' || o.ev.type === 'eval') && !o.ev.done && !isInactive(o.ev) && at(o.date, o.s).getTime() > now);
 }
 
 /** Alarmes à programmer : { key, fireAt, occ } entre maintenant et `days` jours. */
@@ -132,7 +140,7 @@ export function upcomingAlarms(events, days = 14, now = Date.now()) {
   const out = [];
   // La fenêtre d'occurrences va plus loin que l'horizon : un rappel « 1 semaine avant » vise un événement 7 jours plus tard.
   for (const o of occurrences(events, addDays(t, -1), addDays(t, days + 9))) {
-    if (o.ev.done) continue;
+    if (o.ev.done || isInactive(o.ev)) continue;
     for (const a of alarmsOf(o.ev)) {
       const fireAt = at(o.date, o.s).getTime() - a * 60000;
       if (fireAt < now - 10 * 60000 || fireAt > now + days * 864e5) continue;

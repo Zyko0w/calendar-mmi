@@ -13,7 +13,7 @@ import { normalizeUrl, syncUser, refreshMs, minGapMs } from './hyperplanning.js'
 const sleep = (ms) => new Promise((r) => { setTimeout(r, ms).unref?.(); });
 
 const publicEvent = (e) => {
-  const { _id, userId, serverUpdatedAt, hpHash, ...rest } = e;
+  const { _id, userId, serverUpdatedAt, hpHash, hpGone, ...rest } = e;
   return rest;
 };
 const publicUser = (u) => ({
@@ -186,7 +186,7 @@ export function createApp(db, { jwtSecret = process.env.JWT_SECRET, totpKey = pr
     if (p.data.url === null || p.data.url === '') {
       await users.updateOne({ _id: req.user._id }, { $set: { hpUrl: null, hpError: null } });
       const now = Date.now();
-      await events.updateMany({ userId: req.user._id, source: 'hp', deleted: { $ne: true } }, { $set: { deleted: true, serverUpdatedAt: now, updatedAt: now } });
+      await events.updateMany({ userId: req.user._id, source: 'hp', deleted: { $ne: true } }, { $set: { deleted: true, hpGone: true, serverUpdatedAt: now, updatedAt: now } });
       return res.json({ user: publicUser({ ...req.user, hpUrl: null, hpError: null }) });
     }
     let url;

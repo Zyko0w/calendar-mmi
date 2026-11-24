@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
-import { TYPES, ALARMS, MAX_ALARMS, alarmsOf, toggleAlarm, defaultAlarms, MONTHS, MSHORT, WD, WDS, key, fromKey, addDays, wdIdx, toMin, fmtMin, uid, niceDate, validateEvent } from '../core';
+import { TYPES, ALARMS, MAX_ALARMS, alarmsOf, toggleAlarm, defaultAlarms, MONTHS, MSHORT, WD, WDS, key, fromKey, addDays, wdIdx, toMin, fmtMin, uid, niceDate, validateEvent, isCancelled, hpStatusLabel } from '../core';
 import { fonts, tint, useTheme } from '../theme';
 import { useStore } from '../store';
 import { Button, Chip, Field, Icon, Sheet, T, Toggle, inputStyle, tap, thud, useToast } from '../ui';
@@ -83,7 +83,7 @@ export default function EditorSheet({ target, onClose }) {
       />
       {hp && (
         <View style={{ marginTop: 14, padding: 12, borderRadius: 12, backgroundColor: tint(t.cat.cours, 0.1, t.surface), gap: 4 }}>
-          <T weight="bodySemi" size={13}>Cours importé d'Hyperplanning</T>
+          <T weight="bodySemi" size={13} color={isCancelled(ev) ? t.danger : undefined}>{isCancelled(ev) ? `${hpStatusLabel(ev)} sur Hyperplanning` : "Cours importé d'Hyperplanning"}</T>
           <T muted size={12.5}>L'intitulé, l'horaire et la salle suivent ton emploi du temps officiel. Tu peux régler l'alarme et ajouter des notes.</T>
           {ev.hpInfo ? <T muted size={12.5} style={{ marginTop: 4 }}>{ev.hpInfo}</T> : null}
         </View>

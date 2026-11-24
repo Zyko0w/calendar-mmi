@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Pressable, SectionList, View } from 'react-native';
-import { TYPES, WDS, MSHORT, key, fromKey, addDays, today0, wdIdx, fmtMin, at, rel, isPoint, occurrences, alarmsOf, alarmsLabel } from '../core';
+import { TYPES, WDS, MSHORT, key, fromKey, addDays, today0, wdIdx, fmtMin, at, rel, isPoint, occurrences, alarmsOf, alarmsLabel, isCancelled, hpStatusLabel } from '../core';
 import { catInk, liveBg, tint, useTheme } from '../theme';
 import { useStore } from '../store';
 import { Icon, T } from '../ui';
@@ -49,28 +49,30 @@ export default function AgendaScreen({ onOpen }) {
       }}
       renderItem={({ item: o }) => {
         const ev = o.ev, st = at(o.date, o.s).getTime(), en = at(o.date, o.e).getTime();
+        const off = isCancelled(ev);
         let cd = '';
-        if (ev.done) cd = 'terminé';
+        if (off) cd = hpStatusLabel(ev).toLowerCase();
+        else if (ev.done) cd = 'terminé';
         else if (now < st && st - now < 7 * 864e5) cd = `dans ${rel(st - now)}`;
         else if (now >= st && now < en) cd = 'en cours';
         const c = t.cat[ev.type];
         return (
-          <Pressable onPress={() => onOpen(ev, o.date)} style={({ pressed }) => ({ marginHorizontal: 10, marginBottom: 6, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 12, backgroundColor: isPoint(o) ? t.surface : tint(c, ev.done ? t.mixPast : t.mix, t.surface), borderWidth: isPoint(o) ? 1 : 0, borderColor: t.line, opacity: pressed ? 0.8 : 1 })}>
+          <Pressable onPress={() => onOpen(ev, o.date)} style={({ pressed }) => ({ marginHorizontal: 10, marginBottom: 6, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 12, backgroundColor: isPoint(o) ? t.surface : tint(c, ev.done || off ? t.mixPast : t.mix, t.surface), borderWidth: isPoint(o) ? 1 : 0, borderColor: t.line, opacity: pressed ? 0.8 : 1 })}>
             <View style={{ width: 50 }}>
               <T weight="bodySemi" size={14} color={catInk(t, c)}>{fmtMin(o.s)}</T>
               <T muted size={11.5}>{isPoint(o) ? 'limite' : fmtMin(o.e)}</T>
             </View>
             <View style={{ flex: 1, gap: 3 }}>
-              <T weight="bodySemi" size={14.5} numberOfLines={1} style={ev.done ? { textDecorationLine: 'line-through', color: t.muted } : null}>{ev.title}</T>
+              <T weight="bodySemi" size={14.5} numberOfLines={1} style={ev.done || off ? { textDecorationLine: 'line-through', color: t.muted } : null}>{ev.title}</T>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
                 <T muted size={12}>{TYPES[ev.type].label}{ev.source === 'hp' ? ', Hyperplanning' : ''}</T>
                 {ev.location ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}><Icon name="map-pin" size={11} color={t.muted} /><T muted size={12}>{ev.location}</T></View> : null}
-                {alarmsOf(ev).length ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}><Icon name="bell" size={11} color={t.muted} /><T muted size={12}>{alarmsLabel(ev)}</T></View> : null}
+                {!off && alarmsOf(ev).length ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}><Icon name="bell" size={11} color={t.muted} /><T muted size={12}>{alarmsLabel(ev)}</T></View> : null}
               </View>
             </View>
             {cd ? (
               <View style={{ paddingHorizontal: 8, paddingVertical: 4, borderRadius: 7, backgroundColor: cd === 'en cours' ? liveBg(t, c) : t.surface }}>
-                <T weight="bodySemi" size={11.5} color={cd === 'en cours' ? t.onLive : catInk(t, c)}>{cd}</T>
+                <T weight="bodySemi" size={11.5} color={cd === 'en cours' ? t.onLive : off ? t.danger : catInk(t, c)}>{cd}</T>
               </View>
             ) : null}
           </Pressable>

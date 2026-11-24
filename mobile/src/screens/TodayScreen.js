@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, TextInput, View } from 'react-native';
 import {
   TYPES, MONTHS, WD, pad, today0, wdIdx, isoWeek, semester, rel, niceDate, fmtMin, at, isPoint, clamp,
-  nextOccurrence, upcomingDeadlines, occurrences, addDays, key, parseQuick, alarmsOf, alarmsLabel,
+  nextOccurrence, upcomingDeadlines, occurrences, addDays, key, parseQuick, alarmsOf, alarmsLabel, isCancelled, hpStatusLabel,
 } from '../core';
 import { catInk, liveBg, tint, useTheme } from '../theme';
 import { useStore } from '../store';
@@ -161,8 +161,9 @@ export default function TodayScreen({ onOpen, onSettings, focusQuick, onQuickFoc
         {todayList.length === 0 ? <T muted size={13.5}>Journée libre. Profites-en pour avancer ta SAÉ.</T> : todayList.map((o) => {
           const c = t.cat[o.ev.type];
           const st = at(o.date, o.s).getTime(), en = at(o.date, o.e).getTime();
-          const past = (isPoint(o) ? st : en) <= now || o.ev.done;
-          const live = !isPoint(o) && st <= now && now < en;
+          const off = isCancelled(o.ev);
+          const past = (isPoint(o) ? st : en) <= now || o.ev.done || off;
+          const live = !off && !isPoint(o) && st <= now && now < en;
           const bg = live ? liveBg(t, c) : isPoint(o) ? t.surface : tint(c, past ? t.mixPast : t.mix, t.surface);
           const fg = live ? t.onLive : past ? t.muted : t.ink;
           return (
@@ -172,14 +173,15 @@ export default function TodayScreen({ onOpen, onSettings, focusQuick, onQuickFoc
                 <T size={11.5} color={live ? t.onLive : t.muted} style={live ? { opacity: 0.8 } : null}>{isPoint(o) ? 'limite' : fmtMin(o.e)}</T>
               </View>
               <View style={{ flex: 1, gap: 2 }}>
-                <T weight={past ? 'bodyMedium' : 'bodySemi'} size={14.5} numberOfLines={1} color={fg} style={o.ev.done ? { textDecorationLine: 'line-through' } : null}>{o.ev.title}</T>
+                <T weight={past ? 'bodyMedium' : 'bodySemi'} size={14.5} numberOfLines={1} color={fg} style={o.ev.done || off ? { textDecorationLine: 'line-through' } : null}>{o.ev.title}</T>
                 <T size={12.5} numberOfLines={1} color={live ? t.onLive : t.muted} style={live ? { opacity: 0.8 } : null}>{[TYPES[o.ev.type].label, o.ev.location].filter(Boolean).join(', ')}</T>
               </View>
               {live ? (
                 <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5, backgroundColor: t.dark ? 'rgba(0,0,0,0.18)' : 'rgba(255,255,255,0.22)' }}>
                   <T weight="bodySemi" size={10.5} color={t.onLive}>En cours</T>
                 </View>
-              ) : alarmsOf(o.ev).length ? <Icon name="bell" size={14} color={t.muted} /> : null}
+              ) : off ? <T weight="bodySemi" size={11.5} color={t.danger}>{hpStatusLabel(o.ev)}</T>
+              : alarmsOf(o.ev).length ? <Icon name="bell" size={14} color={t.muted} /> : null}
             </Pressable>
           );
         })}

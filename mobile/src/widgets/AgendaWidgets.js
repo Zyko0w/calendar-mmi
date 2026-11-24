@@ -1,7 +1,7 @@
 import { FlexWidget, TextWidget } from 'react-native-android-widget';
 import {
   TYPES, MONTHS, MSHORT, WD, pad, today0, wdIdx, isoWeek, semester, rel, niceDate, fmtMin, at, isPoint, clamp,
-  nextOccurrence, upcomingDeadlines, occurrences, addDays,
+  nextOccurrence, upcomingDeadlines, occurrences, addDays, isCancelled, hpStatusLabel,
 } from '../core';
 import { catInk, liveBg, tint } from '../theme';
 
@@ -53,7 +53,7 @@ function Root({ t, children, style }) {
 
 /** Créneaux du jour à afficher : on garde le dernier passé pour le contexte, puis la suite. */
 function todaySlice(list, now, max) {
-  const firstLeft = list.findIndex((o) => (isPoint(o) ? at(o.date, o.s).getTime() : at(o.date, o.e).getTime()) > now && !o.ev.done);
+  const firstLeft = list.findIndex((o) => (isPoint(o) ? at(o.date, o.s).getTime() : at(o.date, o.e).getTime()) > now && !o.ev.done && !isCancelled(o.ev));
   const start = firstLeft < 0 ? list.length : Math.max(0, firstLeft - 1);
   const shown = list.slice(start, start + max);
   return { shown, more: list.length - start - shown.length, allPast: firstLeft < 0 };
@@ -75,8 +75,9 @@ function SlotRow({ t, o, now }) {
   const c = t.cat[o.ev.type];
   const st = at(o.date, o.s).getTime(), en = at(o.date, o.e).getTime();
   const point = isPoint(o);
-  const past = (point ? st : en) <= now || o.ev.done;
-  const live = !point && st <= now && now < en;
+  const off = isCancelled(o.ev);
+  const past = (point ? st : en) <= now || o.ev.done || off;
+  const live = !off && !point && st <= now && now < en;
   const bg = live ? liveBg(t, c) : point ? t.surface : tint(c, past ? t.mixPast : t.mix, t.surface);
   const sub = live ? t.onLive : t.muted;
   return (
@@ -96,7 +97,7 @@ function SlotRow({ t, o, now }) {
       </FlexWidget>
       <FlexWidget style={{ flex: 1, flexDirection: 'column' }}>
         <Txt text={o.ev.title} size={12.5} font={past ? F.medium : F.semi} color={live ? t.onLive : past ? t.muted : t.ink} />
-        <Txt text={[TYPES[o.ev.type].label, o.ev.location].filter(Boolean).join(', ')} size={10.5} color={sub} />
+        <Txt text={off ? `${hpStatusLabel(o.ev)}, ${o.ev.location || TYPES[o.ev.type].label}` : [TYPES[o.ev.type].label, o.ev.location].filter(Boolean).join(', ')} size={10.5} color={off ? t.danger : sub} />
       </FlexWidget>
       {live ? (
         <FlexWidget style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5, backgroundColor: t.dark ? 'rgba(0, 0, 0, 0.18)' : 'rgba(255, 255, 255, 0.22)' }}>

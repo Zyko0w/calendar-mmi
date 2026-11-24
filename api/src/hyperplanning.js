@@ -87,9 +87,33 @@ export function parseDescription(desc) {
   return out;
 }
 
+const fold = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+/**
+ * Statut Hyperplanning d'un événement : 'annule', 'reporte', 'conge' (férié, vacances) ou '' (cours normal).
+ * Hyperplanning écrit « Annulation : … » ou « REPORTE : … » en tête du titre et de la description,
+ * et donne un UID « COURSANNULE-… » ; les jours fériés et vacances ont un UID « Ferie-… ».
+ */
+const STATUS_RE = /^\s*(cours\s+)?(annulation|annulee?s?|reporte(e|s|es)?|report|deplacee?s?)\s*:/;
+export function hpStatusOf(v, summary, desc) {
+  const pick = (t) => {
+    const m = fold(t).match(STATUS_RE);
+    if (!m) return '';
+    return /^(report|deplac)/.test(m[2]) ? 'reporte' : 'annule';
+  };
+  const st = pick(summary) || pick(desc);
+  if (st) return st;
+  const uid = String(v.uid || '');
+  if (String(v.status || '').toUpperCase() === 'CANCELLED' || /^coursannule/i.test(uid)) return 'annule';
+  if (/^ferie-/i.test(uid)) return 'conge';
+  return '';
+}
+const stripStatus = (s) => String(s || '').replace(/^\s*(cours\s+)?(annulation|annul[ée]e?s?|report[ée](e|s|es)?|report|d[ée]plac[ée]e?s?)\s*:\s*/i, '');
+const GENERIC_SUBJECT = /^(matiere a preciser|reservation amphi|reservation salle)$/;
+
 export function guessType(text) {
-  const t = text.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-  if (/\b(ds|examen|exam|partiel|controle|evaluation|soutenance|qcm|rattrapage)\b/.test(t)) return 'eval';
+  const t = fold(text);
+  if (/\b(ds|examen|exam|partiel|controle|evaluation|soutenance|qcm|rattrapage|toeic)\b/.test(t)) return 'eval';
   if (/\bsae\b|\bs\.a\.e\b|\bprojet tutore\b/.test(t)) return 'sae';
   if (/\b(stage|alternance|entreprise)\b/.test(t)) return 'stage';
   return 'cours';
@@ -106,18 +130,31 @@ export function toEvents(icsText, { now = new Date() } = {}) {
     const allDay = v.datetype === 'date';
     const s = localParts(start);
     const e = end instanceof Date && !Number.isNaN(+end) ? localParts(end) : s;
-    const summary = String(textOf(v.summary)).trim();
-    const info = parseDescription(textOf(v.description));
-    const subject = info['matiere'] || info['matieres'] || info['cours'] || '';
+    const rawSummary = String(textOf(v.summary)).trim();
+    const rawDesc = String(textOf(v.description));
+    const hpStatus = hpStatusOf(v, rawSummary, rawDesc);
+    const summary = stripStatus(rawSummary).trim();
+    const info = parseDescription(stripStatus(rawDesc));
+    let subject = info['matiere'] || info['matieres'] || info['cours'] || '';
     const kind = info['type'] || '';
+    const memo = info['memo'] || '';
+    // « Matière à préciser », « Réservation amphi » : le vrai intitulé est dans le mémo.
+    if (GENERIC_SUBJECT.test(fold(subject)) && memo) subject = memo;
     let title = subject || summary || 'Cours';
-    if (kind && !title.toLowerCase().includes(kind.toLowerCase())) title = `${title} (${kind})`;
+    if (kind && !fold(title).includes(fold(kind))) title = `${title} (${kind})`;
+    // Vacances sur plusieurs jours : DTEND est exclusif, on affiche le dernier jour réel.
+    if (allDay && end instanceof Date && +end - +start > 864e5 + 36e5) {
+      const last = localParts(new Date(+end - 864e5)).date;
+      const [, mo, da] = last.split('-');
+      title = `${title} (jusqu'au ${Number(da)}/${mo})`;
+    }
     const location = String(textOf(v.location) || info['salle'] || info['salles'] || '').trim().slice(0, 80);
     const hpInfo = [
       info['enseignant'] || info['enseignants'] ? `Enseignant : ${info['enseignant'] || info['enseignants']}` : '',
-      info['td'] || info['groupe'] || info['groupes'] || info['promotion'] ? `Groupe : ${info['td'] || info['groupe'] || info['groupes'] || info['promotion']}` : '',
-      info['memo'] ? `Mémo : ${info['memo']}` : '',
-      summary && summary !== title ? summary : '',
+      info['td'] || info['groupe'] || info['groupes'] || info['promotion'] || info['promotions']
+        ? `Groupe : ${info['td'] || info['groupe'] || info['groupes'] || info['promotion'] || info['promotions']}` : '',
+      memo && memo !== subject ? `Mémo : ${memo}` : '',
+      summary && !title.startsWith(summary) ? summary : '',
     ].filter(Boolean).join('\n').slice(0, 1000);
     const uid = String(v.uid || summary + start.toISOString()) + suffix;
     const ev = {
@@ -129,14 +166,15 @@ export function toEvents(icsText, { now = new Date() } = {}) {
       end: allDay ? '18:00' : (e.date === s.date ? e.time : '23:59'),
       location,
       hpInfo,
+      hpStatus,
     };
     if (ev.end < ev.start) ev.end = ev.start;
-    ev.hpHash = sha(JSON.stringify([ev.title, ev.type, ev.date, ev.start, ev.end, ev.location, ev.hpInfo]));
+    ev.hpHash = sha(JSON.stringify([ev.title, ev.type, ev.date, ev.start, ev.end, ev.location, ev.hpInfo, ev.hpStatus]));
     out.push(ev);
   };
   for (const v of Object.values(data)) {
     if (v.type !== 'VEVENT' || !v.start) continue;
-    if (String(v.status || '').toUpperCase() === 'CANCELLED') continue;
+    // Les cours annulés (STATUS:CANCELLED ou « Annulation : ») sont gardés et affichés comme annulés.
     if (v.rrule) {
       const dur = (v.end ? +v.end : +v.start) - +v.start;
       for (const d of v.rrule.between(from, to, true)) push(v, d, new Date(+d + dur), '@' + d.toISOString());
@@ -169,7 +207,7 @@ async function runSync(db, user, opts) {
   try {
     const text = await fetchIcs(user.hpUrl, opts);
     const incoming = toEvents(text);
-    const existing = await events.find({ userId: user._id, source: 'hp' }, { projection: { id: 1, hpHash: 1, date: 1, deleted: 1 } }).toArray();
+    const existing = await events.find({ userId: user._id, source: 'hp' }, { projection: { id: 1, hpHash: 1, date: 1, deleted: 1, hpGone: 1 } }).toArray();
     const byId = new Map(existing.map((e) => [e.id, e]));
     const now = Date.now();
     const alarms = normAlarms(user.hpAlarms);
@@ -179,22 +217,18 @@ async function runSync(db, user, opts) {
       if (seen.has(ev.id)) continue;
       seen.add(ev.id);
       const old = byId.get(ev.id);
-      if (old && old.hpHash === ev.hpHash) continue;
-      ops.push({
-        updateOne: {
-          filter: { userId: user._id, id: ev.id },
-          update: {
-            $set: { ...ev, source: 'hp', serverUpdatedAt: now, updatedAt: now },
-            $setOnInsert: { notes: '', alarm: alarms.length ? alarms[alarms.length - 1] : null, alarms, repeat: 'none', until: '', skip: [], done: false, deleted: false },
-          },
-          upsert: true,
-        },
-      });
+      // hpGone : retiré par l'import (et non masqué par l'étudiant). S'il revient dans Hyperplanning, on le réaffiche.
+      if (old && old.hpHash === ev.hpHash && !old.hpGone) continue;
+      const $set = { ...ev, source: 'hp', serverUpdatedAt: now, updatedAt: now };
+      const update = old
+        ? { $set: old.hpGone ? { ...$set, deleted: false, hpGone: false } : $set }
+        : { $set, $setOnInsert: { notes: '', alarm: alarms.length ? alarms[alarms.length - 1] : null, alarms, repeat: 'none', until: '', skip: [], done: false, deleted: false } };
+      ops.push({ updateOne: { filter: { userId: user._id, id: ev.id }, update, upsert: true } });
     }
     const today = new Date().toISOString().slice(0, 10);
     for (const old of existing) {
       if (!seen.has(old.id) && !old.deleted && old.date >= today) {
-        ops.push({ updateOne: { filter: { userId: user._id, id: old.id }, update: { $set: { deleted: true, serverUpdatedAt: now, updatedAt: now } } } });
+        ops.push({ updateOne: { filter: { userId: user._id, id: old.id }, update: { $set: { deleted: true, hpGone: true, serverUpdatedAt: now, updatedAt: now } } } });
       }
     }
     if (ops.length) await events.bulkWrite(ops, { ordered: false });

@@ -1,7 +1,7 @@
 import {
   TYPES, ALARMS, MONTHS, MSHORT, WD, WDS, pad, key, fromKey, addDays, wdIdx, sow, today0, toMin, fmtMin, at, dayDiff,
   isoWeek, semester, rel, niceDate, uid, alarmsOf, alarmsLabel, toggleAlarm, defaultAlarms, MAX_ALARMS, clamp, snap, isPoint, occurrences, findOcc as findOccIn, layoutDay,
-  nextOccurrence, upcomingDeadlines, upcomingAlarms, parseQuick, validateEvent, createSync, makeDemo,
+  nextOccurrence, upcomingDeadlines, upcomingAlarms, parseQuick, validateEvent, isCancelled, hpStatusLabel, createSync, makeDemo,
 } from './core.js';
 
 const $ = (s) => document.querySelector(s);
@@ -96,9 +96,10 @@ function evHtml(o, i) {
   const ev = o.ev, cat = `var(--c-${ev.type})`;
   const sm = clamp(o.s, HSTART * 60, HEND * 60), top = (sm - HSTART * 60) / 60 * H;
   const lw = `--l:${o.lane / o.n};--w:${1 / o.n};--i:${i};--cat:${cat}`;
-  const icons = `${ev.repeat === 'weekly' ? ic('repeat', 11) : ''}${alarmsOf(ev).length ? ic('bell', 11) : ''}`;
-  const cls = `${ev.done ? ' done' : ''}${ev.source === 'hp' ? ' locked' : ''}`;
-  const lbl = `${esc(ev.title)}, ${niceDate(o.date)} ${fmtMin(o.s)}`;
+  const off = isCancelled(ev);
+  const icons = `${ev.repeat === 'weekly' ? ic('repeat', 11) : ''}${!off && alarmsOf(ev).length ? ic('bell', 11) : ''}`;
+  const cls = `${ev.done || off ? ' done' : ''}${off ? ' off' : ''}${ev.source === 'hp' ? ' locked' : ''}`;
+  const lbl = `${esc(ev.title)}, ${niceDate(o.date)} ${fmtMin(o.s)}${off ? ', ' + hpStatusLabel(ev).toLowerCase() : ''}`;
   const st = ` data-date="${o.date}" data-s="${o.s}" data-e="${o.e}"`;
   if (isPoint(o)) {
     return `<div class="ev pin${cls}${timeState(o)}" tabindex="0" role="button" aria-label="${lbl}" data-oid="${esc(o.oid)}"${st} style="${lw};top:${top - 12}px"><span class="ev-m">${fmtMin(o.s)}</span><span class="ev-t">${esc(ev.title)}</span></div>`;
@@ -106,13 +107,13 @@ function evHtml(o, i) {
   const em = clamp(o.e, HSTART * 60 + 15, HEND * 60); const h = Math.max(22, (em - sm) / 60 * H - 2);
   const short = h < 44 ? ' short' : '';
   const meta = [ev.location ? esc(ev.location) : '', icons].filter(Boolean).join(' ');
-  return `<div class="ev${short}${cls}${timeState(o)}" tabindex="0" role="button" aria-label="${lbl}" data-oid="${esc(o.oid)}"${st} style="${lw};top:${top + 1}px;height:${h}px"><span class="ev-time"><span class="tm">${fmtMin(o.s)}–${fmtMin(o.e)}</span></span><span class="ev-t">${esc(ev.title)}</span>${meta ? `<span class="ev-m">${meta}</span>` : ''}<span class="rsz" aria-hidden="true"></span></div>`;
+  return `<div class="ev${short}${cls}${timeState(o)}" tabindex="0" role="button" aria-label="${lbl}" data-oid="${esc(o.oid)}"${st} style="${lw};top:${top + 1}px;height:${h}px"><span class="ev-time">${off ? `<span class="st">${hpStatusLabel(ev)}</span> ` : ''}<span class="tm">${fmtMin(o.s)}–${fmtMin(o.e)}</span></span><span class="ev-t">${esc(ev.title)}</span>${meta ? `<span class="ev-m">${meta}</span>` : ''}<span class="rsz" aria-hidden="true"></span></div>`;
 }
 /** « past » si l'événement est terminé, « live » s'il est en cours (aplat plein). */
 function timeState(o) {
   const n = new Date(), tk = key(today0()), m = n.getHours() * 60 + n.getMinutes();
   if (o.date < tk) return ' past';
-  if (o.date > tk) return '';
+  if (o.date > tk || isCancelled(o.ev)) return '';
   if (isPoint(o)) return o.s <= m ? ' past' : '';
   if (o.e <= m) return ' past';
   return o.s <= m ? ' live' : '';
@@ -270,12 +271,14 @@ function renderAgenda() {
     const d = fromKey(k);
     return `<div class="ag-day ${k === tk ? 'today' : ''}"><div class="ag-d"><b>${d.getDate()}</b><span>${k === tk ? "aujourd'hui" : WDS[wdIdx(d)] + ' ' + MSHORT[d.getMonth()]}</span></div><div class="ag-list">${days[k].map((o) => {
       const ev = o.ev, st = at(k, o.s).getTime(), en = at(k, o.e).getTime();
+      const off = isCancelled(ev);
       let cd = '';
-      if (!ev.done) { if (now < st && st - now < 7 * 864e5) cd = `dans ${rel(st - now)}`; else if (now >= st && now < en) cd = 'en cours'; } else cd = 'terminé';
-      const cdc = cd === 'en cours' ? 'cd live' : 'cd';
-      return `<button class="ag-row ${ev.done ? 'done' : ''}" data-oid="${esc(o.oid)}" style="--cat:var(--c-${ev.type})">
+      if (off) cd = hpStatusLabel(ev).toLowerCase();
+      else if (!ev.done) { if (now < st && st - now < 7 * 864e5) cd = `dans ${rel(st - now)}`; else if (now >= st && now < en) cd = 'en cours'; } else cd = 'terminé';
+      const cdc = cd === 'en cours' ? 'cd live' : off ? 'cd off' : 'cd';
+      return `<button class="ag-row ${ev.done || off ? 'done' : ''}" data-oid="${esc(o.oid)}" style="--cat:var(--c-${ev.type})">
         <span class="ag-time"><b>${fmtMin(o.s)}</b>${isPoint(o) ? ' limite' : ' – ' + fmtMin(o.e)}</span>
-        <span style="min-width:0"><div class="ag-t">${esc(ev.title)}</div><div class="ag-sub"><span>${TYPES[ev.type].label}${ev.source === 'hp' ? ', Hyperplanning' : ''}</span>${ev.location ? `<span>${ic('pin', 12)}${esc(ev.location)}</span>` : ''}${ev.repeat === 'weekly' ? `<span>${ic('repeat', 12)}hebdo</span>` : ''}${alarmsOf(ev).length ? `<span>${ic('bell', 12)}${alarmsLabel(ev)}</span>` : ''}</div></span>
+        <span style="min-width:0"><div class="ag-t">${esc(ev.title)}</div><div class="ag-sub"><span>${TYPES[ev.type].label}${ev.source === 'hp' ? ', Hyperplanning' : ''}</span>${ev.location ? `<span>${ic('pin', 12)}${esc(ev.location)}</span>` : ''}${ev.repeat === 'weekly' ? `<span>${ic('repeat', 12)}hebdo</span>` : ''}${!off && alarmsOf(ev).length ? `<span>${ic('bell', 12)}${alarmsLabel(ev)}</span>` : ''}</div></span>
         ${cd ? `<span class="${cdc}">${cd}</span>` : '<span></span>'}
       </button>`;
     }).join('')}</div></div>`;
@@ -400,7 +403,9 @@ function openEditor(ev, pre, occDate) {
   setRepeat(editing.repeat === 'weekly');
   [fT, fD, fS, fE, fL].forEach((x) => { x.disabled = hp; });
   fR.disabled = hp; $('#fTypes').classList.toggle('locked', hp);
-  $('#hpNote').hidden = !hp; $('#hpInfo').textContent = editing.hpInfo || '';
+  $('#hpNote').hidden = !hp;
+  $('#hpInfo').textContent = [isCancelled(editing) ? `${hpStatusLabel(editing)} sur Hyperplanning.` : '', editing.hpInfo || ''].filter(Boolean).join('
+');
   $('#delBtn').style.visibility = ev ? 'visible' : 'hidden';
   $('#delBtn').innerHTML = ic('trash', 16) + (hp ? 'Masquer' : 'Supprimer');
   $('#delc').classList.remove('on'); $('#fErr').textContent = '';

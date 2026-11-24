@@ -4,6 +4,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import { connect, close } from '../src/db.js';
 import { createApp } from '../src/app.js';
 import { toEvents } from '../src/hyperplanning.js';
+import { upcomingAlarms } from '../../shared/core.js';
 import { hotp, stepAt, verifyTotp, base32Decode, base32Encode } from '../src/totp.js';
 
 const ICS = `BEGIN:VCALENDAR
@@ -60,6 +61,73 @@ test('parse Hyperplanning', () => {
   assert.equal(evs[1].type, 'eval');
 });
 
+// Format réel d'Hyperplanning (université de Toulon, export 2026).
+const ICS_STATUS = `BEGIN:VCALENDAR
+VERSION:2.0
+PRODID;LANGUAGE=fr:Copyright Index-Education - HYPERPLANNING 2026
+BEGIN:VEVENT
+CATEGORIES:HYPERPLANNING
+UID:COURSANNULE-16379-6-ETU-Index-Education
+DTSTART:${stamp(1, 16, 0)}
+DTEND:${stamp(1, 17, 30)}
+SUMMARY;LANGUAGE=fr:REPORTE : Héberg et cybersécurité - FRANCOIS Alexandre - MMI.BUT3 - CM
+DESCRIPTION;LANGUAGE=fr:REPORTE : \\nMatière : Héberg et cybersécurité\\nEnseignant : FRANCOIS Alexandre\\nType : CM\\n
+END:VEVENT
+BEGIN:VEVENT
+UID:COURSANNULE-16345-6-ETU-Index-Education
+DTSTART:${stamp(2, 8, 0)}
+DTEND:${stamp(2, 9, 30)}
+SUMMARY;LANGUAGE=fr:Annulation : PPP - BAILLEUL Florent - TDH - TD
+DESCRIPTION;LANGUAGE=fr:Annulation : \\nMatière : PPP\\nEnseignant : BAILLEUL Florent\\nTD : TDH\\nType : TD\\n
+END:VEVENT
+BEGIN:VEVENT
+UID:Cours-1-5-ETU-Index-Education
+DTSTART:${stamp(3, 8, 0)}
+DTEND:${stamp(3, 9, 0)}
+SUMMARY;LANGUAGE=fr:Matière à préciser - CHAPUIS Alexandre - MMI.BUT3 - Séance SOIE
+DESCRIPTION;LANGUAGE=fr:Matière : Matière à préciser\\nEnseignant : CHAPUIS Alexandre\\nSalle : CO701\\nMémo : Séance SOIE\\n
+END:VEVENT
+BEGIN:VEVENT
+UID:Cours-2-5-ETU-Index-Education
+DTSTART:${stamp(4, 8, 0)}
+DTEND:${stamp(4, 9, 0)}
+SUMMARY:Annulé en cas de grève : Reportage vidéo
+DESCRIPTION:Matière : Reportage vidéo\\nType : TP
+END:VEVENT
+BEGIN:VEVENT
+UID:Ferie-923-ETU-Index-Education
+DTSTART;VALUE=DATE:${stamp(5, 0, 0).slice(0, 8)}
+DTEND;VALUE=DATE:${stamp(20, 0, 0).slice(0, 8)}
+SUMMARY;LANGUAGE=fr:Vacances
+END:VEVENT
+BEGIN:VEVENT
+UID:Cours-3-5-ETU-Index-Education
+STATUS:CANCELLED
+DTSTART:${stamp(6, 8, 0)}
+DTEND:${stamp(6, 9, 0)}
+SUMMARY:Anglais
+END:VEVENT
+END:VCALENDAR`;
+
+test('Hyperplanning : cours annulés, reportés, congés et mémo', () => {
+  const evs = toEvents(ICS_STATUS);
+  const by = (re) => evs.find((e) => re.test(e.title));
+  assert.equal(evs.length, 6);
+  assert.equal(by(/Héberg/).hpStatus, 'reporte');
+  assert.equal(by(/Héberg/).title, 'Héberg et cybersécurité (CM)');
+  assert.equal(by(/PPP/).hpStatus, 'annule');
+  assert.doesNotMatch(by(/PPP/).hpInfo, /Annulation/);
+  assert.equal(by(/SOIE/).title, 'Séance SOIE', 'le mémo remplace « Matière à préciser »');
+  assert.equal(by(/Reportage/).hpStatus, '', '« Reportage » ou un texte libre ne veut pas dire reporté');
+  assert.equal(by(/Vacances/).hpStatus, 'conge');
+  assert.match(by(/Vacances/).title, /jusqu'au/);
+  assert.equal(by(/Anglais/).hpStatus, 'annule', 'STATUS:CANCELLED gardé et marqué annulé');
+  // Pas d'alarme, ni « prochain cours », pour un cours annulé, reporté ou un congé.
+  const local = evs.map((e) => ({ ...e, source: 'hp', alarms: [10], repeat: 'none', skip: [] }));
+  const ring = upcomingAlarms(local, 30).map((a) => a.occ.ev.title);
+  assert.deepEqual(ring.sort(), ['Reportage vidéo (TP)', 'Séance SOIE']);
+});
+
 test('parcours complet', async () => {
   let r = await call('POST', '/auth/register', { email: 'Etu@iut.fr', password: 'motdepasse1' });
   assert.equal(r.status, 201);
@@ -102,11 +170,18 @@ test('parcours complet', async () => {
   r = await call('GET', '/events?since=' + since, null, token);
   assert.ok(r.body.events.some((e) => e.deleted && e.type === 'eval'));
   assert.ok(r.body.events.some((e) => e.notes === 'Apporter le casque'));
+  // Le cours revient dans Hyperplanning : il réapparaît (il avait été retiré par l'import, pas masqué par l'étudiant).
+  icsBody = ICS;
+  await new Promise((ok) => setTimeout(ok, 5));
+  r = await call('GET', '/events?refreshHp=1&since=' + since, null, token);
+  assert.equal(r.body.user.hpCount, 2, JSON.stringify(r.body.user));
+  assert.ok(r.body.events.some((e) => !e.deleted && e.type === 'eval'), 'cours revenu réaffiché');
+  assert.ok(r.body.events.every((e) => !('hpGone' in e)));
 
   r = await call('DELETE', '/events/e1?updatedAt=' + (Date.now() + 20), null, token);
   assert.equal(r.body.applied, true);
   r = await call('GET', '/events', null, token);
-  assert.equal(r.body.events.length, 1);
+  assert.equal(r.body.events.length, 2);
   r = await call('GET', '/events', null, 'faux');
   assert.equal(r.status, 401);
 });

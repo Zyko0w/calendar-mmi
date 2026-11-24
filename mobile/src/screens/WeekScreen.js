@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { PanResponder, Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
-import { MSHORT, MONTHS, WDS, pad, key, addDays, today0, wdIdx, fmtMin, isPoint, clamp, occurrences, layoutDay } from '../core';
+import { MSHORT, MONTHS, WDS, pad, key, addDays, today0, wdIdx, fmtMin, isPoint, clamp, occurrences, layoutDay, isCancelled, hpStatusLabel } from '../core';
 import { catInk, liveBg, tint, useTheme } from '../theme';
 import { useStore } from '../store';
 import { IconBtn, T, tap } from '../ui';
@@ -125,7 +125,9 @@ function EventBlock({ o, colW, state, onPress }) {
   const sm = clamp(o.s, HSTART * 60, HEND * 60);
   const top = (sm - HSTART * 60) / 60 * H;
   const w = colW / o.n, left = o.lane * w;
-  const past = state === 'past' || o.ev.done, live = state === 'live';
+  const off = isCancelled(o.ev);
+  const past = state === 'past' || o.ev.done || off, live = state === 'live' && !off;
+  const strike = o.ev.done || off ? { textDecorationLine: 'line-through' } : null;
   if (isPoint(o)) {
     return (
       <Pressable onPress={() => { tap(); onPress(); }} style={{ position: 'absolute', top: top - 12, left: left + 2, width: w - 4, height: 24, borderRadius: 12, backgroundColor: t.surface, borderWidth: 1, borderColor: t.line, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 7, zIndex: 5, elevation: 2 }}>
@@ -142,11 +144,12 @@ function EventBlock({ o, colW, state, onPress }) {
   return (
     <Pressable
       onPress={() => { tap(); onPress(); }}
-      accessibilityLabel={`${o.ev.title}, ${fmtMin(o.s)} à ${fmtMin(o.e)}${live ? ', en cours' : ''}`}
+      accessibilityLabel={`${o.ev.title}, ${fmtMin(o.s)} à ${fmtMin(o.e)}${off ? `, ${hpStatusLabel(o.ev).toLowerCase()}` : live ? ', en cours' : ''}`}
       style={({ pressed }) => ({ position: 'absolute', top: top + 1, left: left + 3, width: w - 6, height: h, borderRadius: 10, overflow: 'hidden', backgroundColor: bg, paddingVertical: 5, paddingHorizontal: 7, transform: [{ scale: pressed ? 0.97 : 1 }], zIndex: live ? 3 : 2, elevation: live ? 4 : 0, shadowColor: c, shadowOpacity: live ? 0.5 : 0, shadowRadius: 10, shadowOffset: { width: 0, height: 6 } })}
     >
-      {h >= 40 && <T weight={past ? 'bodyMedium' : 'bodySemi'} size={10.5} numberOfLines={1} color={timeC}>{fmtMin(o.s)}–{fmtMin(o.e)}</T>}
-      <T weight={past ? 'bodyMedium' : 'bodySemi'} size={12} numberOfLines={h < 50 ? 1 : 3} color={fg} style={o.ev.done ? { textDecorationLine: 'line-through' } : null}>{o.ev.title}</T>
+      {off ? <T weight="bodySemi" size={10.5} numberOfLines={1} color={t.danger}>{hpStatusLabel(o.ev)}{h >= 40 ? ` · ${fmtMin(o.s)}–${fmtMin(o.e)}` : ''}</T>
+        : h >= 40 && <T weight={past ? 'bodyMedium' : 'bodySemi'} size={10.5} numberOfLines={1} color={timeC}>{fmtMin(o.s)}–{fmtMin(o.e)}</T>}
+      <T weight={past ? 'bodyMedium' : 'bodySemi'} size={12} numberOfLines={h < 50 ? 1 : 3} color={fg} style={strike}>{o.ev.title}</T>
       {h >= 66 && o.ev.location ? <T size={10.5} numberOfLines={1} color={live ? t.onLive : t.muted} style={live ? { opacity: 0.8 } : null}>{o.ev.location}</T> : null}
       {live && h >= 80 && (
         <View style={{ alignSelf: 'flex-start', marginTop: 4, paddingHorizontal: 5, borderRadius: 4, backgroundColor: t.dark ? 'rgba(0,0,0,0.18)' : 'rgba(255,255,255,0.22)' }}>

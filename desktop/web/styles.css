@@ -235,6 +235,10 @@ kbd{font-family:inherit;font-size:11px;padding:1px 5px;border-radius:5px;backgro
 .ev.done .ev-t{text-decoration:line-through;color:var(--muted)}
 .ev.done{background:color-mix(in oklab,var(--cat) var(--tint-past),var(--surface))}
 .ev.pin.done{background:var(--surface)}
+/* Cours annulé ou reporté sur Hyperplanning */
+.ev.off .ev-time .st{color:var(--danger);font-weight:700}
+.ev.off{outline:1px dashed color-mix(in oklab,var(--danger) 45%,transparent);outline-offset:-1px}
+.cd.off{color:var(--danger)}
 .ev.dragging{pointer-events:none;z-index:30;cursor:grabbing;transform:scale(1.02);box-shadow:0 18px 40px -12px rgba(0,0,0,.35)}
 .rsz{position:absolute;left:0;right:0;bottom:0;height:9px;cursor:ns-resize}
 .rsz::after{content:"";position:absolute;left:50%;bottom:3px;width:18px;height:3px;margin-left:-9px;border-radius:3px;background:var(--cat);opacity:0;transition:opacity .15s}
