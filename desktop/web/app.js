@@ -404,8 +404,7 @@ function openEditor(ev, pre, occDate) {
   [fT, fD, fS, fE, fL].forEach((x) => { x.disabled = hp; });
   fR.disabled = hp; $('#fTypes').classList.toggle('locked', hp);
   $('#hpNote').hidden = !hp;
-  $('#hpInfo').textContent = [isCancelled(editing) ? `${hpStatusLabel(editing)} sur Hyperplanning.` : '', editing.hpInfo || ''].filter(Boolean).join('
-');
+  $('#hpInfo').textContent = [isCancelled(editing) ? `${hpStatusLabel(editing)} sur Hyperplanning.` : '', editing.hpInfo || ''].filter(Boolean).join('\n');
   $('#delBtn').style.visibility = ev ? 'visible' : 'hidden';
   $('#delBtn').innerHTML = ic('trash', 16) + (hp ? 'Masquer' : 'Supprimer');
   $('#delc').classList.remove('on'); $('#fErr').textContent = '';
